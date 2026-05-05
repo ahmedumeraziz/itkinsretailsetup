@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const SHEET_ID        = "1_iXcsPI8C1g0UQaAcacbKjsHq9AWI3IRIsCbX2E87qk";
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxdACtjQDsCWoLsZGz-2xTDCYJNhF_wIcvIyJt845TrgkJoIDs4e1WEYoTqrxAQCgSS/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwZgs1riQpv7OHhvwQ_Am3hKMBv5y8yUIbTW04Dl7Kb8HedUts2diDCfuw5GBucI3Wm/exec";
 
 const SHEET_URLS = {
   items:      `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=0`,
