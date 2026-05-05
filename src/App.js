@@ -1,17 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
-const SHEET_ID        = "11xFHs6zVh4ZgNTwtRveTg1Q401pxiCWv8tyOuFfhoiA";
+const SHEET_ID        = "1_iXcsPI8C1g0UQaAcacbKjsHq9AWI3IRIsCbX2E87qk";
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxdACtjQDsCWoLsZGz-2xTDCYJNhF_wIcvIyJt845TrgkJoIDs4e1WEYoTqrxAQCgSS/exec";
 
 const SHEET_URLS = {
   items:      `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=0`,
-  categories: `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=2144331484`,
-  cashiers:   `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=2086576967`,
-  sales:      `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=524266390`,
-  stocklog:   `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1993922930`,
-  customers:  `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1450432528`,
-  returns:    `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=344971108`,
+  categories: `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1073637718`,
+  cashiers:   `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=2059868600`,
+  sales:      `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=968224820`,
+  stocklog:   `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1905792112`,
+  customers:  `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=505470885`,
+  returns:    `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1759563627`,
 };
 
 const REQUIRED_HEADERS = {
