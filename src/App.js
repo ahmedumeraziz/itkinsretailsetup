@@ -2455,6 +2455,7 @@ function CustomersTab({ customers, setCustomers, safeCallScript, sales }) {
     const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `Customers_${new Date().toLocaleDateString("en-GB").replace(/\//g, "-")}.csv`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
   };
 
+  
   return (
     <div>
       <div style={{ display: "flex", gap: 11, marginBottom: 16, flexWrap: "wrap" }}>
@@ -2472,7 +2473,7 @@ function CustomersTab({ customers, setCustomers, safeCallScript, sales }) {
         <input value={filterCell} onChange={e => setFilterCell(e.target.value)} placeholder="Filter by Cell#..." style={{ ...inSt, maxWidth: 180 }} />
         <input value={filterBill} onChange={e => setFilterBill(e.target.value)} placeholder="Filter by Bill#..." style={{ ...inSt, maxWidth: 150 }} />
         <button className="btn" onClick={() => { setFilterName(""); setFilterCell(""); setFilterBill(""); }} style={{ padding: "9px 13px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.45)", borderRadius: 7 }}>Clear</button>
-        <button className="btn" onClick={() => setShowPayModal(true)} style={{ padding: "9px 16px", background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>💰 Receive Payment</button>
+        <button className="btn" onClick={() => setShowPayModal(true)} style={{ padding: "9px 16px", background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>💰 Receive Payment</button> <button className="btn" onClick={() => setShowAddModal(true)} style={{ padding: "9px 16px", background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>➕ Add Customer</button>
         <button className="btn" onClick={exportCSV} style={{ marginLeft: "auto", padding: "9px 16px", background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>📥 Export CSV</button>
       </div>
       <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
@@ -2505,6 +2506,45 @@ function CustomersTab({ customers, setCustomers, safeCallScript, sales }) {
         </div>
       </div>
 
+function AddCustomerModal({ customers, setCustomers, safeCallScript, onClose }) {
+  const [name, setName] = useState("");
+  const [cell, setCell] = useState("");
+  const [msg,  setMsg]  = useState("");
+
+  const handleSave = async () => {
+    if (!name.trim()) { setMsg("Customer name is required."); return; }
+    if (customers.find(c => c.CellNo && c.CellNo === cell.trim())) {
+      setMsg("A customer with this cell number already exists."); return;
+    }
+    const newCustomer = { Name: name.trim(), CellNo: cell.trim(), BillNo: "", payments: [] };
+    setCustomers(prev => [...prev, newCustomer]);
+    try { await dbPut("customers", { ...newCustomer, id: cell.trim() || name.trim() }); } catch (e) {}
+    await safeCallScript({ action: "saveCustomer", Name: newCustomer.Name, CellNo: newCustomer.CellNo, BillNo: "" });
+    setMsg("✅ Customer added successfully!");
+    setTimeout(() => onClose(), 1200);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: "#0c1828", border: "1px solid rgba(0,229,160,0.3)", borderRadius: 14, padding: 24, width: 380, maxWidth: "95vw" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <div style={{ color: "#00e5a0", fontSize: 14, fontWeight: 700 }}>➕ Add New Customer</div>
+          <button className="btn" onClick={onClose} style={{ width: 28, height: 28, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", borderRadius: 6, fontSize: 14 }}>✕</button>
+        </div>
+
+        <label style={{ ...lbSt, marginBottom: 5 }}>Customer Name *</label>
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Full Name" style={{ ...inSt, width: "100%", marginBottom: 13, padding: "8px 12px" }} />
+
+        <label style={{ ...lbSt, marginBottom: 5 }}>Cell Number</label>
+        <input value={cell} onChange={e => setCell(e.target.value)} placeholder="0300-0000000" style={{ ...inSt, width: "100%", marginBottom: 16, padding: "8px 12px" }} />
+
+        {msg && <div style={{ marginBottom: 12, padding: "8px 12px", background: msg.startsWith("✅") ? "rgba(0,229,160,0.1)" : "rgba(255,80,80,0.1)", border: `1px solid ${msg.startsWith("✅") ? "rgba(0,229,160,0.3)" : "rgba(255,80,80,0.3)"}`, borderRadius: 7, color: msg.startsWith("✅") ? "#00e5a0" : "#ff6b6b", fontSize: 12 }}>{msg}</div>}
+
+        <button className="btn" onClick={handleSave} style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>💾 Save Customer</button>
+      </div>
+    </div>
+  );
+}
       {showPayModal && (
         <ReceivePaymentModal
           customers={customers}
@@ -2515,6 +2555,14 @@ function CustomersTab({ customers, setCustomers, safeCallScript, sales }) {
         />
       )}
 
+{showAddModal && (
+  <AddCustomerModal
+    customers={customers}
+    setCustomers={setCustomers}
+    safeCallScript={safeCallScript}
+    onClose={() => setShowAddModal(false)}
+  />
+)}
       {ledgerCustomer && (
         <CustomerLedgerModal
           customer={ledgerCustomer}
@@ -2755,6 +2803,7 @@ function StockTab({ items, setItems, safeCallScript }) {
   const [filterCo,     setFilterCo]     = useState("All");
   const [filterStatus, setFilterStatus] = useState("All");
   const [pdfLoading,   setPdfLoading]   = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
 
   const categories = [...new Set(items.map(i => i.Category || "").filter(Boolean))].sort();
   const companies  = [...new Set(items.map(i => i.Company || "").filter(Boolean))].sort();
