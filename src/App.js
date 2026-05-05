@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
-const SHEET_ID        = "1_iXcsPI8C1g0UQaAcacbKjsHq9AWI3IRIsCbX2E87qk";
+const SHEET_ID        = "11xFHs6zVh4ZgNTwtRveTg1Q401pxiCWv8tyOuFfhoiA";
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxdACtjQDsCWoLsZGz-2xTDCYJNhF_wIcvIyJt845TrgkJoIDs4e1WEYoTqrxAQCgSS/exec";
 
 const SHEET_URLS = {
@@ -21,7 +21,7 @@ const REQUIRED_HEADERS = {
   sales:      ["BillNo","Date","Time","Cashier","GrandTotal","Discount","FBR","PaymentMethod","ItemsDetail","CustomerName","CustomerCell"],
   stocklog:   ["Date","Barcode","ItemName","StockBefore","StockAfter","Reason"],
   customers:  ["Name","CellNo","BillNo"],
-  returns:    ["ReturnNo","OrigBillNo","Date","Time","Cashier","Items","RefundAmount","Reason","UsedInBill"],
+  returns: ["ReturnNo","OrigBillNo","Date","Time","Cashier","Items","RefundAmount","Reason","UsedInBill"],
 };
 
 // ─── INDEXEDDB LAYER ──────────────────────────────────────────────────────────
@@ -368,9 +368,11 @@ function getScriptText() {
   return `// ═══════════════════════════════════════════════════════════════
 //  Apps Script v6.0
 //  Designed by itKINS → Engr. Ahmed Umer (0304-7414437)
+//  Apps Script → Delete all → Paste → Save → Deploy → New Deployment → Web App → Copy /exec URL
 // ═══════════════════════════════════════════════════════════════
 
 var SECRET_TOKEN     = "itKINS@POS#2024$Secure!";
+
 var SHEET_ITEMS      = "Items";
 var SHEET_CATEGORIES = "Categories";
 var SHEET_CASHIER    = "Cashier";
@@ -389,82 +391,468 @@ var HEADERS = {
   Returns:    ["ReturnNo","OrigBillNo","Date","Time","Cashier","Items","RefundAmount","Reason","UsedInBill"]
 };
 
-function makeResp(data){ return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON); }
-function doGet(e){ return makeResp({status:"ok",message:"itKINS Script v6 Running",time:new Date().toString()}); }
+function makeResp(data){
+  return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function doGet(e){
+  return makeResp({status:"ok",message:"itKINS Script v6 Running",time:new Date().toString()});
+}
+
 function doPost(e){
   try{
-    var raw=e.postData?e.postData.contents:"{}"; var data=JSON.parse(raw);
-    if(!data.token||data.token!==SECRET_TOKEN){ return makeResp({status:"error",message:"Unauthorized"}); }
-    var ss=SpreadsheetApp.getActiveSpreadsheet(); var result;
+    var raw=e.postData?e.postData.contents:"{}";
+    var data=JSON.parse(raw);
+    if(!data.token || data.token !== SECRET_TOKEN){
+      return makeResp({status:"error",message:"Unauthorized request blocked"});
+    }
+    var ss=SpreadsheetApp.getActiveSpreadsheet();
+    var result;
     switch(data.action){
-      case "saveSale": result=saveSale(ss,data); break;
-      case "saveCustomer": result=saveCustomer(ss,data); break;
-      case "adjustStock": result=adjustStock(ss,data); break;
-      case "addItem": result=addItem(ss,data); break;
-      case "editItem": result=editItem(ss,data); break;
-      case "deleteItem": result=deleteItem(ss,data); break;
-      case "addCategory": result=addCategory(ss,data); break;
-      case "deleteCategory": result=deleteCategory(ss,data); break;
-      case "addCashier": result=addCashier(ss,data); break;
-      case "editCashier": result=editCashier(ss,data); break;
-      case "deleteCashier": result=deleteCashier(ss,data); break;
-      case "saveReturn": result=saveReturn(ss,data); break;
-      case "markReturnUsed": result=markReturnUsed(ss,data); break;
-      case "ensureHeaders": result=ensureAllHeaders(ss); break;
-      case "ping": result={status:"ok",message:"pong"}; break;
-      default: result={status:"error",message:"Unknown action: "+data.action};
+      case "saveSale":         result=saveSale(ss,data);         break;
+      case "saveCustomer":     result=saveCustomer(ss,data);     break;
+      case "adjustStock":      result=adjustStock(ss,data);      break;
+      case "addItem":          result=addItem(ss,data);          break;
+      case "editItem":         result=editItem(ss,data);         break;
+      case "deleteItem":       result=deleteItem(ss,data);       break;
+      case "addCategory":      result=addCategory(ss,data);      break;
+      case "deleteCategory":   result=deleteCategory(ss,data);   break;
+      case "addCashier":       result=addCashier(ss,data);       break;
+      case "editCashier":      result=editCashier(ss,data);      break;
+      case "deleteCashier":    result=deleteCashier(ss,data);    break;
+      case "saveReturn":       result=saveReturn(ss,data);       break;
+      case "markReturnUsed":   result=markReturnUsed(ss,data);   break;
+      case "ensureHeaders":    result=ensureAllHeaders(ss);       break;
+      case "ping":             result={status:"ok",message:"pong"}; break;
+      default:                 result={status:"error",message:"Unknown action: "+data.action};
     }
     return makeResp(result);
-  }catch(err){ return makeResp({status:"error",message:err.toString()}); }
+  }catch(err){
+    return makeResp({status:"error",message:err.toString()});
+  }
+}
+
+function getHeaders(sheet){
+  var last=sheet.getLastColumn();
+  if(last<1)return{};
+  var row=sheet.getRange(1,1,1,last).getValues()[0];
+  var map={};row.forEach(function(h,i){map[String(h).trim()]=i;});return map;
+}
+
+function findRow(sheet,colIndex,value){
+  var last=sheet.getLastRow();
+  if(last<2)return -1;
+  var col=sheet.getRange(2,colIndex+1,last-1,1).getValues();
+  for(var i=0;i<col.length;i++){
+    if(String(col[i][0]).trim()===String(value).trim())return i+2;
+  }
+  return -1;
+}
+
+function ensureAllHeaders(ss){
+  var fixed=[];
+  var sheetMap={
+    Items:SHEET_ITEMS, Categories:SHEET_CATEGORIES, Cashier:SHEET_CASHIER,
+    Sales:SHEET_SALES, StockLog:SHEET_STOCKLOG, Customer:SHEET_CUSTOMER, Returns:SHEET_RETURNS
+  };
+  Object.keys(sheetMap).forEach(function(key){
+    var tabName=sheetMap[key];
+    var sh=ss.getSheetByName(tabName);
+    if(!sh){sh=ss.insertSheet(tabName);sh.getRange(1,1,1,HEADERS[key].length).setValues([HEADERS[key]]);fixed.push("CREATED: "+tabName);return;}
+    var last=sh.getLastColumn();
+    var existing=last>0?sh.getRange(1,1,1,last).getValues()[0].map(function(h){return String(h).trim();}):[];
+    var required=HEADERS[key]||[];
+    var toAdd=required.filter(function(h){return!existing.includes(h);});
+    if(toAdd.length>0){toAdd.forEach(function(h){var col=sh.getLastColumn()+1;sh.getRange(1,col).setValue(h);fixed.push(tabName+"."+h);});}
+  });
+  return{status:"ok",fixed:fixed,message:fixed.length>0?"Fixed: "+fixed.join(", "):"All headers OK"};
+}
+
+function markReturnUsed(ss,data){
+  var sh=ss.getSheetByName(SHEET_RETURNS);
+  if(!sh)return{status:"error",message:"Returns sheet not found"};
+  var hdrMap=getHeaders(sh);
+  var retNoIdx=hdrMap["ReturnNo"];
+  var usedIdx=hdrMap["UsedInBill"];
+  if(retNoIdx===undefined)return{status:"error",message:"ReturnNo column not found"};
+  if(usedIdx===undefined){
+    var col=sh.getLastColumn()+1;
+    sh.getRange(1,col).setValue("UsedInBill");
+    usedIdx=col-1;
+  }
+  var rowNum=findRow(sh,retNoIdx,data.ReturnNo);
+  if(rowNum===-1)return{status:"error",message:"Return not found: "+data.ReturnNo};
+  sh.getRange(rowNum,usedIdx+1).setValue("1");
+  return{status:"ok",message:"Marked used: "+data.ReturnNo};
+}
+
+function saveSale(ss,data){
+  var salesSh=ss.getSheetByName(SHEET_SALES);
+  if(!salesSh)return{status:"error",message:"Sheet not found: "+SHEET_SALES};
+  salesSh.appendRow([
+    data.BillNo||"",data.Date||"",data.Time||"",data.Cashier||"",
+    parseFloat(data.GrandTotal)||0,parseFloat(data.Discount)||0,parseFloat(data.FBR)||1,
+    data.PaymentMethod||"",data.ItemsDetail||"[]",data.CustomerName||"Unknown",data.CustomerCell||""
+  ]);
+  var itemsSh=ss.getSheetByName(SHEET_ITEMS);
+  var stockLogSh=ss.getSheetByName(SHEET_STOCKLOG);
+  if(itemsSh&&data.items&&data.items.length>0){
+    var allRows=itemsSh.getDataRange().getValues();
+    var hdr=allRows[0];
+    var bcIdx=hdr.indexOf("Barcode");
+    var stockIdx=hdr.indexOf("Stock");
+    var nameIdx=hdr.indexOf("ItemName");
+    if(bcIdx===-1||stockIdx===-1)return{status:"warning",message:"Sale saved but missing columns"};
+    var logRows=[];
+    data.items.forEach(function(soldItem){
+      for(var i=1;i<allRows.length;i++){
+        if(String(allRows[i][bcIdx]).trim()===String(soldItem.Barcode).trim()){
+          var before=parseInt(allRows[i][stockIdx])||0;
+          var qty=parseInt(soldItem.qty)||1;
+          var after=Math.max(0,before-qty);
+          itemsSh.getRange(i+1,stockIdx+1).setValue(after);
+          allRows[i][stockIdx]=after;
+          logRows.push([data.Date||"",soldItem.Barcode||"",allRows[i][nameIdx]||"",before,after,"Bill #"+(data.BillNo||"")]);
+          break;
+        }
+      }
+    });
+    if(stockLogSh&&logRows.length>0){var nextRow=stockLogSh.getLastRow()+1;stockLogSh.getRange(nextRow,1,logRows.length,6).setValues(logRows);}
+  }
+  return{status:"ok",message:"Sale saved: Bill #"+data.BillNo};
+}
+
+function saveReturn(ss,data){
+  var retSh=ss.getSheetByName(SHEET_RETURNS);
+  if(!retSh)return{status:"error",message:"Returns sheet not found"};
+  retSh.appendRow([
+    data.ReturnNo||"",data.OrigBillNo||"",data.Date||"",data.Time||"",
+    data.Cashier||"",data.Items||"[]",parseFloat(data.RefundAmount)||0,data.Reason||"","0"
+  ]);
+  var itemsSh=ss.getSheetByName(SHEET_ITEMS);
+  var stockLogSh=ss.getSheetByName(SHEET_STOCKLOG);
+  var returnedItems=[];
+  try{returnedItems=JSON.parse(data.Items||"[]");}catch(e){}
+  if(itemsSh&&returnedItems.length>0){
+    var allRows=itemsSh.getDataRange().getValues();
+    var hdr=allRows[0];
+    var bcIdx=hdr.indexOf("Barcode");
+    var stockIdx=hdr.indexOf("Stock");
+    var nameIdx=hdr.indexOf("ItemName");
+    var logRows=[];
+    returnedItems.forEach(function(ri){
+      for(var i=1;i<allRows.length;i++){
+        if(String(allRows[i][bcIdx]).trim()===String(ri.Barcode).trim()){
+          var before=parseInt(allRows[i][stockIdx])||0;
+          var qty=parseInt(ri.qty)||1;
+          var after=before+qty;
+          itemsSh.getRange(i+1,stockIdx+1).setValue(after);
+          allRows[i][stockIdx]=after;
+          logRows.push([data.Date||"",ri.Barcode||"",allRows[i][nameIdx]||"",before,after,"Return #"+(data.ReturnNo||"")]);
+          break;
+        }
+      }
+    });
+    if(stockLogSh&&logRows.length>0){var nextRow=stockLogSh.getLastRow()+1;stockLogSh.getRange(nextRow,1,logRows.length,6).setValues(logRows);}
+  }
+  return{status:"ok",message:"Return saved: "+data.ReturnNo};
+}
+
+function saveCustomer(ss,data){
+  var sh=ss.getSheetByName(SHEET_CUSTOMER);
+  if(!sh)return{status:"error",message:"Sheet not found"};
+  var name=(data.Name||"").trim();var cell=(data.CellNo||"").trim();var billNo=(data.BillNo||"").trim();
+  if(!name||!cell)return{status:"error",message:"Name and CellNo required"};
+  var hdrMap=getHeaders(sh);var cellIdx=hdrMap["CellNo"];
+  if(cellIdx===undefined)return{status:"error",message:"CellNo column not found"};
+  var rowNum=findRow(sh,cellIdx,cell);
+  if(rowNum===-1){sh.appendRow([name,cell,billNo]);return{status:"ok"};}
+  var billsIdx=hdrMap["BillNo"];
+  if(billsIdx!==undefined){
+    var existing=String(sh.getRange(rowNum,billsIdx+1).getValue()||"");
+    var bills=existing.split(",").map(function(b){return b.trim();}).filter(Boolean);
+    if(!bills.includes(billNo)){bills.push(billNo);sh.getRange(rowNum,billsIdx+1).setValue(bills.join(","));}
+  }
+  return{status:"ok"};
+}
+
+function adjustStock(ss,data){
+  var itemsSh=ss.getSheetByName(SHEET_ITEMS);
+  var stockLogSh=ss.getSheetByName(SHEET_STOCKLOG);
+  if(!itemsSh)return{status:"error",message:"Sheet not found"};
+  var hdrMap=getHeaders(itemsSh);
+  var bcIdx=hdrMap["Barcode"],stockIdx=hdrMap["Stock"],nameIdx=hdrMap["ItemName"];
+  if(bcIdx===undefined||stockIdx===undefined)return{status:"error",message:"Missing columns"};
+  var rowNum=findRow(itemsSh,bcIdx,data.Barcode);
+  if(rowNum===-1)return{status:"error",message:"Barcode not found"};
+  var before=parseInt(itemsSh.getRange(rowNum,stockIdx+1).getValue())||0;
+  var val=parseInt(data.Value)||0;
+  var after=data.AdjustType==="add"?before+val:data.AdjustType==="subtract"?Math.max(0,before-val):val;
+  itemsSh.getRange(rowNum,stockIdx+1).setValue(after);
+  if(stockLogSh){
+    var itemName=nameIdx!==undefined?itemsSh.getRange(rowNum,nameIdx+1).getValue():data.Barcode;
+    stockLogSh.appendRow([new Date().toLocaleDateString("en-GB"),data.Barcode,itemName,before,after,"Admin: "+(data.Reason||"Manual")]);
+  }
+  return{status:"ok",before:before,after:after};
+}
+
+function addItem(ss,data){
+  var sh=ss.getSheetByName(SHEET_ITEMS);
+  if(!sh)return{status:"error",message:"Sheet not found"};
+  var hdrMap=getHeaders(sh);
+  if(hdrMap["Barcode"]!==undefined&&findRow(sh,hdrMap["Barcode"],data.Barcode)!==-1)
+    return{status:"error",message:"Barcode exists"};
+  sh.appendRow([data.Barcode||"",data.Category||"",data.Company||"",data.ItemName||"",
+    parseFloat(data.Price)||0,parseFloat(data.CostPrice)||0,parseFloat(data.Discount)||0,parseInt(data.Stock)||0,data.ExpiryDate||""]);
+  return{status:"ok"};
+}
+
+function editItem(ss,data){
+  var sh=ss.getSheetByName(SHEET_ITEMS);
+  if(!sh)return{status:"error",message:"Sheet not found"};
+  var hdrMap=getHeaders(sh);
+  if(hdrMap["Barcode"]===undefined)return{status:"error",message:"No Barcode column"};
+  var rowNum=findRow(sh,hdrMap["Barcode"],data.Barcode);
+  if(rowNum===-1)return{status:"error",message:"Barcode not found"};
+  var updates={"Category":data.Category,"Company":data.Company||"","ItemName":data.ItemName,
+    "Price":parseFloat(data.Price)||0,"CostPrice":parseFloat(data.CostPrice)||0,
+    "Discount":parseFloat(data.Discount)||0,"Stock":parseInt(data.Stock)||0,"ExpiryDate":data.ExpiryDate||""};
+  Object.keys(updates).forEach(function(col){if(hdrMap[col]!==undefined)sh.getRange(rowNum,hdrMap[col]+1).setValue(updates[col]);});
+  return{status:"ok"};
+}
+
+function deleteItem(ss,data){
+  var sh=ss.getSheetByName(SHEET_ITEMS);
+  if(!sh)return{status:"error",message:"Sheet not found"};
+  var bcIdx=getHeaders(sh)["Barcode"];
+  if(bcIdx===undefined)return{status:"error",message:"No Barcode column"};
+  var rowNum=findRow(sh,bcIdx,data.Barcode);
+  if(rowNum===-1)return{status:"error",message:"Not found"};
+  sh.deleteRow(rowNum);
+  return{status:"ok"};
+}
+
+function addCategory(ss,data){
+  var sh=ss.getSheetByName(SHEET_CATEGORIES);
+  if(!sh)return{status:"error",message:"Sheet not found"};
+  var name=(data.CategoryName||"").trim();
+  if(!name)return{status:"error",message:"Empty name"};
+  var vals=sh.getDataRange().getValues();
+  for(var i=1;i<vals.length;i++)if(String(vals[i][0]).trim()===name)return{status:"error",message:"Exists"};
+  sh.appendRow([name]);return{status:"ok"};
+}
+
+function deleteCategory(ss,data){
+  var sh=ss.getSheetByName(SHEET_CATEGORIES);
+  if(!sh)return{status:"error",message:"Sheet not found"};
+  var name=(data.CategoryName||"").trim();
+  var vals=sh.getDataRange().getValues();
+  for(var i=1;i<vals.length;i++){if(String(vals[i][0]).trim()===name){sh.deleteRow(i+1);return{status:"ok"};}}
+  return{status:"error",message:"Not found"};
+}
+
+function addCashier(ss,data){
+  var sh=ss.getSheetByName(SHEET_CASHIER);
+  if(!sh)return{status:"error",message:"Sheet not found"};
+  var hdrMap=getHeaders(sh);var unIdx=hdrMap["Username"];
+  if(unIdx===undefined)return{status:"error",message:"No Username column"};
+  if(findRow(sh,unIdx,data.Username)!==-1)return{status:"error",message:"Username exists"};
+  sh.appendRow([data.Name||"",data.Username||"",data.PIN||"",data.Role||"cashier"]);
+  return{status:"ok"};
+}
+
+function editCashier(ss,data){
+  var sh=ss.getSheetByName(SHEET_CASHIER);
+  if(!sh)return{status:"error",message:"Sheet not found"};
+  var hdrMap=getHeaders(sh);var unIdx=hdrMap["Username"];
+  if(unIdx===undefined)return{status:"error",message:"No Username column"};
+  var rowNum=findRow(sh,unIdx,data.OrigUsername||data.Username);
+  if(rowNum===-1)return{status:"error",message:"Not found"};
+  var updates={"Name":data.Name,"Username":data.Username,"PIN":data.PIN,"Role":data.Role};
+  Object.keys(updates).forEach(function(col){if(hdrMap[col]!==undefined)sh.getRange(rowNum,hdrMap[col]+1).setValue(updates[col]);});
+  return{status:"ok"};
+}
+
+function deleteCashier(ss,data){
+  var sh=ss.getSheetByName(SHEET_CASHIER);
+  if(!sh)return{status:"error",message:"Sheet not found"};
+  var unIdx=getHeaders(sh)["Username"];
+  if(unIdx===undefined)return{status:"error",message:"No Username column"};
+  var rowNum=findRow(sh,unIdx,data.Username);
+  if(rowNum===-1)return{status:"error",message:"Not found"};
+  sh.deleteRow(rowNum);return{status:"ok"};
 }
 `;
 }
+
+
+// ═══════════════════════════════════════════════════════════════
+//  DAILY BACKUP SCRIPT
+//  Designed by itKINS → Engr. Ahmed Umer (0304-7414437)
+//  Setup: Run createDailyBackupTrigger() ONCE to activate
+// ═══════════════════════════════════════════════════════════════
+
+// ── CONFIG ────────────────────────────────────────────────────
+var SPREADSHEET_ID  = "11xFHs6zVh4ZgNTwtRveTg1Q401pxiCWv8tyOuFfhoiA";  // paste your sheet ID
+var BACKUP_FOLDER_ID = "1hcszl75hKW7i2YW2vjPD3JUtUbm9s4Rm";       // paste your Drive folder ID
+var BACKUP_PREFIX   = "POS_Backup";                 // name prefix for backup files
+var KEEP_DAYS       = 30;                           // delete backups older than this
+
+// ── MAIN BACKUP FUNCTION ──────────────────────────────────────
+function dailyBackup() {
+  try {
+    var ss        = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var folder    = DriveApp.getFolderById(BACKUP_FOLDER_ID);
+    var date      = Utilities.formatDate(new Date(), "Asia/Karachi", "yyyy-MM-dd_HH-mm");
+    var backupName = BACKUP_PREFIX + "_" + date;
+
+    // Make a full copy of the spreadsheet
+    var copy = DriveApp.getFileById(SPREADSHEET_ID).makeCopy(backupName, folder);
+
+    console.log("✅ Backup created: " + backupName);
+
+    // Auto-delete old backups beyond KEEP_DAYS
+    deleteOldBackups(folder);
+
+    // Optional: log to a sheet inside your spreadsheet
+    logBackup(ss, backupName, "SUCCESS");
+
+  } catch(e) {
+    console.error("❌ Backup failed: " + e.toString());
+    // Send email alert on failure (optional)
+    // MailApp.sendEmail("your@email.com", "POS Backup Failed", e.toString());
+  }
+}
+
+// ── DELETE OLD BACKUPS ────────────────────────────────────────
+function deleteOldBackups(folder) {
+  var cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - KEEP_DAYS);
+
+var allFiles = folder.getFiles();
+  var deleted = 0;
+
+  while (allFiles.hasNext()) {
+    var file = allFiles.next();
+    var name = file.getName();
+    // Only delete files that match our backup prefix
+    if (name.startsWith(BACKUP_PREFIX) && file.getDateCreated() < cutoff) {
+      file.setTrashed(true);
+      deleted++;
+      console.log("🗑 Deleted old backup: " + name);
+    }
+  }
+  if (deleted > 0) console.log("Cleaned up " + deleted + " old backup(s)");
+}
+
+// ── LOG BACKUP TO SHEET ───────────────────────────────────────
+function logBackup(ss, backupName, status) {
+  var logSheetName = "BackupLog";
+  var logSheet = ss.getSheetByName(logSheetName);
+
+  // Create log sheet if it doesn't exist
+  if (!logSheet) {
+    logSheet = ss.insertSheet(logSheetName);
+    logSheet.getRange(1, 1, 1, 4).setValues([["Date", "Time", "BackupName", "Status"]]);
+    logSheet.getRange(1, 1, 1, 4).setFontWeight("bold").setBackground("#0a2540").setFontColor("#ffffff");
+  }
+
+  var now  = new Date();
+  var date = Utilities.formatDate(now, "Asia/Karachi", "dd/MM/yyyy");
+  var time = Utilities.formatDate(now, "Asia/Karachi", "hh:mm a");
+
+  logSheet.appendRow([date, time, backupName, status]);
+}
+
+// ── SET UP DAILY TRIGGER (run this ONCE manually) ─────────────
+function createDailyBackupTrigger() {
+  // Delete any existing backup triggers first
+  var triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(function(t) {
+    if (t.getHandlerFunction() === "dailyBackup") {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+
+  // Create new trigger — runs daily at 2:00 AM Pakistan time
+  ScriptApp.newTrigger("dailyBackup")
+    .timeBased()
+    .everyDays(1)
+    .atHour(2)       // 2 AM — change to any hour 0-23
+    .create();
+
+  console.log("✅ Daily backup trigger created! Runs every day at 2 AM.");
+}
+
+// ── MANUAL BACKUP (run anytime from script editor) ────────────
+function manualBackup() {
+  dailyBackup();
+  console.log("✅ Manual backup completed.");
+}
+
+// ── CHECK EXISTING TRIGGERS ───────────────────────────────────
+function listTriggers() {
+  var triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(function(t) {
+    console.log("Trigger: " + t.getHandlerFunction() + " | Type: " + t.getEventType());
+  });
+  if (triggers.length === 0) console.log("No triggers found.");
+}
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function App() {
+  // ── PWA: App name + icon ──────────────────────────────────────
   useEffect(() => {
     document.title = "POS APP";
     const link = document.querySelector("link[rel~='icon']") || document.createElement("link");
-    link.rel  = "icon"; link.type = "image/webp";
+    link.rel  = "icon";
+    link.type = "image/webp";
     link.href = "http://itkins.com/wp-content/uploads/2025/06/itKINS-Favicon.webp";
     document.head.appendChild(link);
     const manifest = {
-      short_name: "POS APP", name: "POS APP",
+      short_name: "POS APP",
+      name: "POS APP",
       icons: [{ src: "http://itkins.com/wp-content/uploads/2025/06/itKINS-Favicon.webp", sizes: "512x512", type: "image/webp", purpose: "any maskable" }],
-      start_url: window.location.href, display: "standalone",
-      background_color: "#0a0e1a", theme_color: "#0a0e1a",
+      start_url: window.location.href,
+      display: "standalone",
+      background_color: "#0a0e1a",
+      theme_color: "#0a0e1a",
     };
     const blob = new Blob([JSON.stringify(manifest)], { type: "application/json" });
     const mLink = document.querySelector("link[rel='manifest']") || document.createElement("link");
-    mLink.rel = "manifest"; mLink.href = URL.createObjectURL(blob);
+    mLink.rel  = "manifest";
+    mLink.href = URL.createObjectURL(blob);
     document.head.appendChild(mLink);
   }, []);
-
-  const [screen,        setScreen]        = useState("login");
-  const [user,          setUser]          = useState(null);
-  const [items,         setItems]         = useState(DEMO_ITEMS);
-  const [categories,    setCategories]    = useState(DEMO_CATEGORIES);
-  const [cashiers,      setCashiers]      = useState(DEMO_CASHIERS);
-  const [sales,         setSales]         = useState(DEMO_SALES);
-  const [customers,     setCustomers]     = useState(DEMO_CUSTOMERS);
-  const [returns,       setReturns]       = useState(DEMO_RETURNS);
-  const [billCounter,   setBillCounter]   = useState(120);
-  const [returnCounter, setReturnCounter] = useState(1);
-  const [loading,       setLoading]       = useState(false);
-  const [loadMsg,       setLoadMsg]       = useState("Loading data...");
-  const [sheetStatus,   setSheetStatus]   = useState("demo");
-  const [lastSync,      setLastSync]      = useState(null);
-  const [isOnline,      setIsOnline]      = useState(navigator.onLine);
-  const [searchIndex,   setSearchIndex]   = useState(new Map());
-  const [itemMap,       setItemMap]       = useState(new Map());
-  const pendingBackup   = useRef([]);
+  // ─────────────────────────────────────────────────────────────
+  
+  const [screen,       setScreen]       = useState("login");
+  const [user,         setUser]         = useState(null);
+  const [items,        setItems]        = useState(DEMO_ITEMS);
+  const [categories,   setCategories]   = useState(DEMO_CATEGORIES);
+  const [cashiers,     setCashiers]     = useState(DEMO_CASHIERS);
+  const [sales,        setSales]        = useState(DEMO_SALES);
+  const [customers,    setCustomers]    = useState(DEMO_CUSTOMERS);
+  const [returns,      setReturns]      = useState(DEMO_RETURNS);
+  const [billCounter,  setBillCounter]  = useState(120);
+  const [returnCounter,setReturnCounter]= useState(1);
+  const [loading,      setLoading]      = useState(false);
+  const [loadMsg,      setLoadMsg]      = useState("Loading data...");
+  const [sheetStatus,  setSheetStatus]  = useState("demo");
+  const [lastSync,     setLastSync]     = useState(null);
+  const [isOnline,     setIsOnline]     = useState(navigator.onLine);
+  const [searchIndex,  setSearchIndex]  = useState(new Map());
+  const [itemMap,      setItemMap]      = useState(new Map());
+  const pendingBackup  = useRef([]);
 
   useEffect(() => {
     const idx = buildSearchIndex(items);
     const map = new Map(items.map(i => [i.Barcode, i]));
-    setSearchIndex(idx); setItemMap(map);
+    setSearchIndex(idx);
+    setItemMap(map);
   }, [items]);
 
   useEffect(() => {
@@ -490,8 +878,9 @@ export default function App() {
   };
 
   const safeCallScript = async payload => {
-    if (isOnline) { await callScript(payload); }
-    else {
+    if (isOnline) {
+      await callScript(payload);
+    } else {
       try { await dbQueueAction(payload); } catch (e) { pendingBackup.current.push(payload); }
       console.log("📦 Queued offline:", payload.action);
     }
@@ -499,12 +888,16 @@ export default function App() {
 
   const loadFromSheet = useCallback(async (silent = false) => {
     if (!silent) { setLoading(true); setLoadMsg("Checking local cache..."); }
+
     try {
       const [dbItems, dbCats, dbCashiers, dbSales, dbCustomers, dbReturns] = await Promise.all([
         dbGetAll("items"), dbGetAll("categories"), dbGetAll("cashiers"),
         dbGetAll("sales"), dbGetAll("customers"), dbGetAll("returns"),
       ]);
-      if (dbItems.length > 0) { setItems(dbItems.map(r => { const { id, ...rest } = r; return rest; })); setSheetStatus("cached"); }
+      if (dbItems.length > 0) {
+        setItems(dbItems.map(r => { const { id, ...rest } = r; return rest; }));
+        setSheetStatus("cached");
+      }
       if (dbCats.length > 0) setCategories(dbCats.map(r => r.CategoryName || r.id).filter(Boolean));
       if (dbCashiers.length > 0) setCashiers(dbCashiers.map(r => { const { id, ...rest } = r; return rest; }));
       if (dbSales.length > 0) {
@@ -515,14 +908,17 @@ export default function App() {
       }
       if (dbCustomers.length > 0) setCustomers(dbCustomers.map(r => { const { id, ...rest } = r; return rest; }));
       if (dbReturns.length > 0) {
-        const cleaned = dbReturns.map(r => {
-          const { id, ...rest } = r;
-          return { ...rest, usedInBill: rest.usedInBill === true || rest.UsedInBill === "1" || rest.UsedInBill === "true" };
-        });
-        setReturns(cleaned);
-        const mx = cleaned.reduce((m, r) => Math.max(m, parseInt((r.ReturnNo || "").replace(/\D/g, "")) || 0), 0);
-        if (mx > 0) setReturnCounter(mx + 1);
-      }
+  const cleaned = dbReturns.map(r => {
+    const { id, ...rest } = r;
+    return {
+      ...rest,
+      usedInBill: rest.usedInBill === true || rest.UsedInBill === "1" || rest.UsedInBill === "true"
+    };
+  });
+  setReturns(cleaned);
+  const mx = cleaned.reduce((m, r) => Math.max(m, parseInt((r.ReturnNo || "").replace(/\D/g, "")) || 0), 0);
+  if (mx > 0) setReturnCounter(mx + 1);
+}
     } catch (e) { console.warn("IndexedDB read failed:", e); }
 
     setSheetStatus(s => s === "demo" || s === "cached" ? "syncing" : s);
@@ -535,24 +931,32 @@ export default function App() {
         go(SHEET_URLS.sales), go(SHEET_URLS.customers),
         fetch(SHEET_URLS.returns, { cache: "no-store" }).then(r => r.ok ? r.text() : "").catch(() => ""),
       ]);
+
       const pI = parseCSV(iT), pC = parseCSV(cT), pCa = parseCSV(caT), pS = parseCSV(sT), pCu = parseCSV(cuT);
       const pRet = retT ? parseCSV(retT) : [];
       const cats = pC.map(r => r["CategoryName"] || r[Object.keys(r)[0]] || "").filter(Boolean);
-      if (pI.length)   { setItems(pI);   await dbSaveAll("items",     pI,  "Barcode"); }
-      if (cats.length) { setCategories(cats); await dbSaveAll("categories", pC, "CategoryName"); }
-      if (pCa.length)  { setCashiers(pCa); await dbSaveAll("cashiers", pCa, "Username"); }
-      if (pS.length)   {
-        setSales(pS); await dbSaveAll("sales", pS, "BillNo");
+
+      if (pI.length)  { setItems(pI);   await dbSaveAll("items",     pI,  "Barcode"); }
+      if (cats.length){ setCategories(cats); await dbSaveAll("categories", pC, "CategoryName"); }
+      if (pCa.length) { setCashiers(pCa); await dbSaveAll("cashiers", pCa, "Username"); }
+      if (pS.length)  {
+        setSales(pS);
+        await dbSaveAll("sales", pS, "BillNo");
         const mx = pS.reduce((m, s) => Math.max(m, parseInt(s.BillNo) || 0), 0);
         if (mx > 0) setBillCounter(mx + 1);
       }
       if (pCu.length) { setCustomers(pCu); await dbSaveAll("customers", pCu, "CellNo"); }
-      if (pRet.length) {
-        const parsedRet = pRet.map(r => ({ ...r, usedInBill: r.UsedInBill === "1" || r.UsedInBill === "true" || r.UsedInBill === true }));
-        setReturns(parsedRet); await dbSaveAll("returns", parsedRet, "ReturnNo");
-        const mx = parsedRet.reduce((m, r) => Math.max(m, parseInt((r.ReturnNo || "").replace(/\D/g, "")) || 0), 0);
-        if (mx > 0) setReturnCounter(mx + 1);
-      }
+     if (pRet.length){
+  const parsedRet = pRet.map(r => ({
+    ...r,
+    usedInBill: r.UsedInBill === "1" || r.UsedInBill === "true" || r.UsedInBill === true
+  }));
+  setReturns(parsedRet);
+  await dbSaveAll("returns", parsedRet, "ReturnNo");
+  const mx = parsedRet.reduce((m, r) => Math.max(m, parseInt((r.ReturnNo || "").replace(/\D/g, "")) || 0), 0);
+  if (mx > 0) setReturnCounter(mx + 1);
+}
+
       setSheetStatus("loaded"); setLastSync(new Date());
       await dbSetMeta("lastSync", new Date().toISOString());
       await flushPending();
@@ -564,6 +968,7 @@ export default function App() {
   }, []);
 
   useEffect(() => { loadFromSheet(); }, [loadFromSheet]);
+
   useEffect(() => {
     const interval = setInterval(() => { if (isOnline) loadFromSheet(true); }, 60000);
     return () => clearInterval(interval);
@@ -594,24 +999,26 @@ export default function App() {
         if (existing) { const ns = Math.max(0, (parseInt(existing.Stock) || 0) - (parseInt(si.qty) || 1)); await dbPut("items", { ...existing, Stock: String(ns) }); }
       }
     } catch (e) { console.warn("IDB save error:", e); }
+
+    
     await safeCallScript({ action: "saveSale", BillNo: sale.BillNo, Date: sale.Date, Time: sale.Time, Cashier: sale.Cashier, GrandTotal: sale.GrandTotal, Discount: sale.Discount, FBR: 1, PaymentMethod: sale.PaymentMethod, ItemsDetail: JSON.stringify(sale.items || []), CustomerName: customerInfo?.Name || "Unknown", CustomerCell: customerInfo?.CellNo || "", items: sale.items });
     if (customerInfo?.Name && customerInfo.Name !== "Unknown" && customerInfo.CellNo) {
       await safeCallScript({ action: "saveCustomer", Name: customerInfo.Name, CellNo: customerInfo.CellNo, BillNo: sale.BillNo });
     }
   };
 
-  const handleReturnSaved = async (ret) => {
-    const retWithFlag = { ...ret, usedInBill: false, UsedInBill: "0" };
-    setReturns(prev => [...prev, retWithFlag]);
-    setReturnCounter(prev => prev + 1);
-    setItems(prev => prev.map(item => {
-      const ri = safeParseItems(ret.Items).find(r => r.Barcode === item.Barcode);
-      if (ri) { const ns = (parseInt(item.Stock) || 0) + (parseInt(ri.qty) || 1); return { ...item, Stock: String(ns) }; }
-      return item;
-    }));
-    try { await dbPut("returns", { ...retWithFlag, id: ret.ReturnNo }); } catch (e) { }
-    await safeCallScript({ action: "saveReturn", ...ret });
-  };
+const handleReturnSaved = async (ret) => {
+  const retWithFlag = { ...ret, usedInBill: false, UsedInBill: "0" };
+  setReturns(prev => [...prev, retWithFlag]);
+  setReturnCounter(prev => prev + 1);
+  setItems(prev => prev.map(item => {
+    const ri = safeParseItems(ret.Items).find(r => r.Barcode === item.Barcode);
+    if (ri) { const ns = (parseInt(item.Stock) || 0) + (parseInt(ri.qty) || 1); return { ...item, Stock: String(ns) }; }
+    return item;
+  }));
+  try { await dbPut("returns", { ...retWithFlag, id: ret.ReturnNo }); } catch (e) { }
+  await safeCallScript({ action: "saveReturn", ...ret });
+};
 
   const CSS = `
     @import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;500;600;700;800&family=Orbitron:wght@700;900&display=swap');
@@ -626,7 +1033,11 @@ export default function App() {
     .fadein{animation:fadeIn 0.3s ease forwards}
     .search-item-row{transition:background 0.1s;}
     .search-item-row.kb-selected{background:rgba(0,180,255,0.16)!important;border-left:3px solid #00b4ff;}
-    .qty-focus-input{background:rgba(0,180,255,0.15)!important;border:2px solid #00b4ff!important;box-shadow:0 0 0 3px rgba(0,180,255,0.2)!important;}
+    .qty-focus-input{
+      background: rgba(0,180,255,0.15) !important;
+      border: 2px solid #00b4ff !important;
+      box-shadow: 0 0 0 3px rgba(0,180,255,0.2) !important;
+    }
   `;
 
   return (
@@ -640,11 +1051,11 @@ export default function App() {
         </div>
       )}
       {screen === "login" && <LoginScreen cashiers={cashiers} onLogin={handleLogin} sheetStatus={sheetStatus} onRefresh={() => loadFromSheet()} />}
-      {screen === "pos"   && <POSScreen user={user} items={items} categories={categories} billCounter={billCounter} onLogout={handleLogout} onSaleSaved={handleSaleSaved} sheetStatus={sheetStatus} isOnline={isOnline} lastSync={lastSync} onRefresh={() => loadFromSheet()} searchIndex={searchIndex} itemMap={itemMap} sales={sales} returns={returns} returnCounter={returnCounter} onReturnSaved={handleReturnSaved} customers={customers} setCustomers={setCustomers} onMarkReturnUsed={async (returnNo) => {
-        setReturns(prev => prev.map(r => r.ReturnNo === returnNo ? { ...r, usedInBill: true, UsedInBill: "1" } : r));
-        try { const dbRet = await dbGet("returns", returnNo); if (dbRet) await dbPut("returns", { ...dbRet, usedInBill: true, UsedInBill: "1" }); } catch(e) {}
-        await safeCallScript({ action: "markReturnUsed", ReturnNo: returnNo });
-      }} />}
+      {screen === "pos" && <POSScreen user={user} items={items} categories={categories} billCounter={billCounter} onLogout={handleLogout} onSaleSaved={handleSaleSaved} sheetStatus={sheetStatus} isOnline={isOnline} lastSync={lastSync} onRefresh={() => loadFromSheet()} searchIndex={searchIndex} itemMap={itemMap} sales={sales} returns={returns} returnCounter={returnCounter} onReturnSaved={handleReturnSaved} customers={customers} setCustomers={setCustomers} onMarkReturnUsed={async (returnNo) => {
+  setReturns(prev => prev.map(r => r.ReturnNo === returnNo ? { ...r, usedInBill: true, UsedInBill: "1" } : r));
+  try { const dbRet = await dbGet("returns", returnNo); if (dbRet) await dbPut("returns", { ...dbRet, usedInBill: true, UsedInBill: "1" }); } catch(e) {}
+  await safeCallScript({ action: "markReturnUsed", ReturnNo: returnNo });
+}} />}
       {screen === "admin" && <AdminScreen user={user} items={items} setItems={setItems} categories={categories} setCategories={setCategories} cashiers={cashiers} setCashiers={setCashiers} sales={sales} setSales={setSales} customers={customers} setCustomers={setCustomers} returns={returns} setReturns={setReturns} onLogout={handleLogout} onRefresh={() => loadFromSheet()} sheetStatus={sheetStatus} safeCallScript={safeCallScript} lastSync={lastSync} isOnline={isOnline} returnCounter={returnCounter} setReturnCounter={setReturnCounter} onReturnSaved={handleReturnSaved} />}
     </div>
   );
@@ -654,9 +1065,9 @@ export default function App() {
 // STATUS BAR
 // ═══════════════════════════════════════════════════════════════════════════════
 function StatusBar({ isOnline, sheetStatus, lastSync, onRefresh }) {
-  const syncLabel   = lastSync ? lastSync.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }) : "Not synced";
+  const syncLabel = lastSync ? lastSync.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }) : "Not synced";
   const statusColor = sheetStatus === "loaded" ? "#00e080" : sheetStatus === "cached" ? "#00b4ff" : sheetStatus === "error" ? "#ff6b6b" : "#ffd700";
-  const statusText  = sheetStatus === "loaded" ? syncLabel : sheetStatus === "cached" ? "Cached" : sheetStatus === "error" ? "Error · Retry" : sheetStatus === "syncing" ? "Syncing..." : "Demo";
+  const statusText  = sheetStatus === "loaded" ? `${syncLabel}` : sheetStatus === "cached" ? "Cached" : sheetStatus === "error" ? "Error · Retry" : sheetStatus === "syncing" ? "Syncing..." : "Demo";
   const statusIcon  = sheetStatus === "loaded" ? "✓" : sheetStatus === "cached" ? "💾" : sheetStatus === "error" ? "⚠" : sheetStatus === "syncing" ? "⟳" : "◉";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -725,7 +1136,7 @@ function LoginScreen({ cashiers, onLogin, sheetStatus, onRefresh }) {
         </div>
         {error && <div style={{ color: "#ff6b6b", textAlign: "center", fontSize: 12, marginBottom: 12, padding: 8, background: "rgba(255,80,80,0.08)", borderRadius: 6 }}>{error}</div>}
         <button className="btn" onClick={() => doLogin()} style={{ width: "100%", padding: 14, background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 13, letterSpacing: 3, borderRadius: 8, fontFamily: "Orbitron" }}>LOGIN</button>
-      </div>
+        </div>
     </div>
   );
 }
@@ -761,7 +1172,7 @@ function Calculator({ onClose }) {
   };
   const onMouseDown = e => { if (e.target.closest("button")) return; dragging.current = true; const rect = calcRef.current.getBoundingClientRect(); dragOffset.current = { dx: e.clientX - rect.left, dy: e.clientY - rect.top }; e.preventDefault(); };
   useEffect(() => { const move = e => { if (!dragging.current) return; setPos({ x: e.clientX - dragOffset.current.dx, y: e.clientY - dragOffset.current.dy }); }; const up = () => { dragging.current = false; }; window.addEventListener("mousemove", move); window.addEventListener("mouseup", up); return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); }; }, []);
-  const rows = [["7","8","9","÷"],["4","5","6","×"],["1","2","3","-"],["C","0",".","+"],[  "⌫","","","="]];
+  const rows = [["7", "8", "9", "÷"], ["4", "5", "6", "×"], ["1", "2", "3", "-"], ["C", "0", ".", "+"], ["⌫", "", "", "="]];
   const style = pos.x !== null ? { position: "fixed", left: pos.x, top: pos.y, zIndex: 3000 } : { position: "fixed", bottom: 80, right: 20, zIndex: 3000 };
   return (
     <div ref={calcRef} style={{ ...style, background: "#0d1b2a", border: "1px solid rgba(0,180,255,0.3)", borderRadius: 14, padding: 14, boxShadow: "0 8px 40px rgba(0,0,0,0.7)", width: 228, userSelect: "none" }}>
@@ -774,7 +1185,7 @@ function Calculator({ onClose }) {
         <div style={{ color: "#fff", fontSize: 26, fontWeight: 700, fontFamily: "Orbitron", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{disp}</div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 5 }}>
-        {rows.flat().map((k, i) => (k === "" ? <div key={i} /> : <button key={i} onClick={() => press(k)} style={{ padding: "11px 0", background: k === "=" ? "linear-gradient(135deg,#0062ff,#00b4ff)" : ["÷","×","-","+"].includes(k) ? "rgba(0,180,255,0.18)" : k === "C" ? "rgba(255,80,80,0.18)" : k === "⌫" ? "rgba(255,150,0,0.15)" : "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)", color: k === "=" ? "#fff" : k === "C" ? "#ff6b6b" : "#fff", fontSize: 14, fontWeight: 700, borderRadius: 6, cursor: "pointer" }}>{k}</button>))}
+        {rows.flat().map((k, i) => (k === "" ? <div key={i} /> : <button key={i} onClick={() => press(k)} style={{ padding: "11px 0", background: k === "=" ? "linear-gradient(135deg,#0062ff,#00b4ff)" : ["÷", "×", "-", "+"].includes(k) ? "rgba(0,180,255,0.18)" : k === "C" ? "rgba(255,80,80,0.18)" : k === "⌫" ? "rgba(255,150,0,0.15)" : "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)", color: k === "=" ? "#fff" : k === "C" ? "#ff6b6b" : "#fff", fontSize: 14, fontWeight: 700, borderRadius: 6, cursor: "pointer" }}>{k}</button>))}
       </div>
     </div>
   );
@@ -786,41 +1197,53 @@ function Calculator({ onClose }) {
 function emptyBill(id) { return { id, cart: [], payments: [{ type: "cash", amount: "", last4: "" }], saved: false, lastBill: null, billDiscPct: 0, customerName: "Unknown", customerCell: "" }; }
 
 function POSScreen({ user, items, categories, billCounter, onLogout, onSaleSaved, sheetStatus, isOnline, lastSync, onRefresh, searchIndex, itemMap, sales, returns, returnCounter, onReturnSaved, onMarkReturnUsed, customers, setCustomers }) {
-  const [bills,           setBills]           = useState([emptyBill(1)]);
-  const [activeBillId,    setActiveBillId]    = useState(1);
-  const [nextBillId,      setNextBillId]      = useState(2);
-  const [search,          setSearch]          = useState("");
-  const [results,         setResults]         = useState([]);
-  const [kbIndex,         setKbIndex]         = useState(-1);
-  const [tick,            setTick]            = useState(getNow());
-  const [localCounter,    setLocalCounter]    = useState(billCounter);
-  const [showCalc,        setShowCalc]        = useState(false);
-  const [isFS,            setIsFS]            = useState(false);
-  const [showReturn,      setShowReturn]      = useState(false);
+  const [bills,        setBills]        = useState([emptyBill(1)]);
+  const [activeBillId, setActiveBillId] = useState(1);
+  const [nextBillId,   setNextBillId]   = useState(2);
+  const [search,       setSearch]       = useState("");
+  const [results,      setResults]      = useState([]);
+  const [kbIndex,      setKbIndex]      = useState(-1);
+  const [tick,         setTick]         = useState(getNow());
+  const [localCounter, setLocalCounter] = useState(billCounter);
+  const [showCalc,     setShowCalc]     = useState(false);
+  const [isFS,         setIsFS]         = useState(false);
+  const [showReturn,   setShowReturn]   = useState(false);
+  // ── NEW: track which barcode's qty input should be focused after item add ──
   const [focusedQtyBarcode, setFocusedQtyBarcode] = useState(null);
 
   const searchRef  = useRef();
   const resultsRef = useRef([]); resultsRef.current = results;
-  const qtyRefs    = useRef({});
+  // qty input refs: keyed by barcode
+  const qtyRefs = useRef({});
+
+  // Barcode scanner detection
   const scanBuffer = useRef(""); const scanTimer = useRef(null);
 
   useEffect(() => { setLocalCounter(billCounter); }, [billCounter]);
   useEffect(() => { const t = setInterval(() => setTick(getNow()), 1000); return () => clearInterval(t); }, []);
   useEffect(() => { setKbIndex(-1); }, [results]);
 
+  // ── When focusedQtyBarcode changes, focus that input ──
   useEffect(() => {
     if (focusedQtyBarcode) {
       const ref = qtyRefs.current[focusedQtyBarcode];
-      if (ref) { ref.focus(); ref.select(); }
+      if (ref) {
+        ref.focus();
+        ref.select();
+      }
     }
   }, [focusedQtyBarcode]);
 
+  // Debounced search
   useEffect(() => {
     const q = search.trim();
     if (q.length < 1) { setResults([]); return; }
     const timer = setTimeout(() => {
-      if (searchIndex.size > 0) { setResults(searchIndex_run(searchIndex, itemMap, q)); }
-      else { setResults(items.filter(i => i.Barcode?.toLowerCase().includes(q.toLowerCase()) || i.ItemName?.toLowerCase().includes(q.toLowerCase())).slice(0, 12)); }
+      if (searchIndex.size > 0) {
+        setResults(searchIndex_run(searchIndex, itemMap, q));
+      } else {
+        setResults(items.filter(i => i.Barcode?.toLowerCase().includes(q.toLowerCase()) || i.ItemName?.toLowerCase().includes(q.toLowerCase())).slice(0, 12));
+      }
     }, 120);
     return () => clearTimeout(timer);
   }, [search, searchIndex, itemMap, items]);
@@ -847,25 +1270,39 @@ function POSScreen({ user, items, categories, billCounter, onLogout, onSaleSaved
 
   const focusSearch = useCallback(() => {
     setFocusedQtyBarcode(null);
-    setTimeout(() => { if (searchRef.current) { searchRef.current.focus(); searchRef.current.select(); } }, 60);
+    setTimeout(() => {
+      if (searchRef.current) {
+        searchRef.current.focus();
+        searchRef.current.select();
+      }
+    }, 60);
   }, []);
 
+  // ── addItem: adds item then focuses its qty input ──
   const addItem = useCallback(item => {
     upd(b => {
       const ex = b.cart.find(i => i.Barcode === item.Barcode);
       return { ...b, cart: ex ? b.cart.map(i => i.Barcode === item.Barcode ? { ...i, qty: i.qty + 1 } : i) : [...b.cart, { ...item, qty: 1 }] };
     });
     setSearch(""); setResults([]); setKbIndex(-1);
-    setFocusedQtyBarcode(null);
+    // Focus the qty input for this barcode
+    setFocusedQtyBarcode(null); // reset first to re-trigger effect if same item
     setTimeout(() => setFocusedQtyBarcode(item.Barcode), 50);
   }, []);
 
+  // ── Barcode Scanner Support ──
   const lastKeyTime = useRef(0);
   const handleSearchChange = useCallback(e => {
-    const now = Date.now(); const elapsed = now - lastKeyTime.current; lastKeyTime.current = now;
-    const val = e.target.value; setSearch(val);
-    if (elapsed < 50 && val.length > scanBuffer.current.length) { scanBuffer.current = val; }
-    else if (elapsed >= 50) { scanBuffer.current = ""; }
+    const now = Date.now();
+    const elapsed = now - lastKeyTime.current;
+    lastKeyTime.current = now;
+    const val = e.target.value;
+    setSearch(val);
+    if (elapsed < 50 && val.length > scanBuffer.current.length) {
+      scanBuffer.current = val;
+    } else if (elapsed >= 50) {
+      scanBuffer.current = "";
+    }
   }, []);
 
   const handleSearchKeyDown = useCallback(e => {
@@ -892,34 +1329,39 @@ function POSScreen({ user, items, categories, billCounter, onLogout, onSaleSaved
     if (el) el.scrollIntoView({ block: "nearest" });
   }, [kbIndex]);
 
-  const setQty   = (bc, q) => upd(b => ({ ...b, cart: q <= 0 ? b.cart.filter(i => i.Barcode !== bc) : b.cart.map(i => i.Barcode === bc ? { ...i, qty: q } : i) }));
-  const delItem  = bc => { upd(b => ({ ...b, cart: b.cart.filter(i => i.Barcode !== bc) })); if (focusedQtyBarcode === bc) { setFocusedQtyBarcode(null); focusSearch(); } };
-  const voidCart = () => { upd(b => ({ ...b, cart: [], payments: [{ type: "cash", amount: "", last4: "" }], saved: false, billDiscPct: 0, customerName: "Unknown", customerCell: "" })); setFocusedQtyBarcode(null); };
-  const addPay   = () => upd(b => ({ ...b, payments: [...b.payments, { type: "cash", amount: "", last4: "" }] }));
-  const updPay   = (i, f, v) => upd(b => ({ ...b, payments: b.payments.map((p, xi) => xi === i ? { ...p, [f]: v } : p) }));
-  const delPay   = i => upd(b => ({ ...b, payments: b.payments.filter((_, xi) => xi !== i) }));
-  const setBDP   = v => upd(b => ({ ...b, billDiscPct: parseFloat(v) || 0 }));
+  // ── setQty: update quantity for a barcode ──
+  const setQty    = (bc, q) => upd(b => ({ ...b, cart: q <= 0 ? b.cart.filter(i => i.Barcode !== bc) : b.cart.map(i => i.Barcode === bc ? { ...i, qty: q } : i) }));
+  const delItem   = bc => { upd(b => ({ ...b, cart: b.cart.filter(i => i.Barcode !== bc) })); if (focusedQtyBarcode === bc) { setFocusedQtyBarcode(null); focusSearch(); } };
+  const voidCart  = () => { upd(b => ({ ...b, cart: [], payments: [{ type: "cash", amount: "", last4: "" }], saved: false, billDiscPct: 0, customerName: "Unknown", customerCell: "" })); setFocusedQtyBarcode(null); };
+  const addPay    = () => upd(b => ({ ...b, payments: [...b.payments, { type: "cash", amount: "", last4: "" }] }));
+  const updPay    = (i, f, v) => upd(b => ({ ...b, payments: b.payments.map((p, xi) => xi === i ? { ...p, [f]: v } : p) }));
+  const delPay    = i => upd(b => ({ ...b, payments: b.payments.filter((_, xi) => xi !== i) }));
+  const setBDP    = v => upd(b => ({ ...b, billDiscPct: parseFloat(v) || 0 }));
   const setCustName = v => upd(b => ({ ...b, customerName: v }));
   const setCustCell = v => upd(b => ({ ...b, customerCell: v }));
 
-  const applyRefund = (refundAmt, returnNo) => {
-    upd(b => ({ ...b, payments: [...b.payments.filter(p => p.type !== "refund"), { type: "refund", amount: String(refundAmt), origReturnNo: returnNo }] }));
-    onMarkReturnUsed(returnNo);
-  };
+const applyRefund = (refundAmt, returnNo) => {
+  upd(b => ({
+    ...b,
+    payments: [...b.payments.filter(p => p.type !== "refund"), { type: "refund", amount: String(refundAmt), origReturnNo: returnNo }]
+  }));
+  // Mark used immediately in global state + DB + sheet so NO other bill can reuse it
+  onMarkReturnUsed(returnNo);
+};
 
-  const cart         = ab.cart;
-  const payments     = ab.payments;
-  const billDiscPct  = ab.billDiscPct || 0;
-  const subTotal     = cart.reduce((s, i) => s + parseFloat(i.Price || 0) * i.qty, 0);
-  const itemDiscount = cart.reduce((s, i) => s + parseFloat(i.Discount || 0) * i.qty, 0);
-  const afterItems   = subTotal - itemDiscount;
-  const billDiscount = parseFloat(((afterItems * billDiscPct) / 100).toFixed(2));
+  const cart          = ab.cart;
+  const payments      = ab.payments;
+  const billDiscPct   = ab.billDiscPct || 0;
+  const subTotal      = cart.reduce((s, i) => s + parseFloat(i.Price || 0) * i.qty, 0);
+  const itemDiscount  = cart.reduce((s, i) => s + parseFloat(i.Discount || 0) * i.qty, 0);
+  const afterItems    = subTotal - itemDiscount;
+  const billDiscount  = parseFloat(((afterItems * billDiscPct) / 100).toFixed(2));
   const refundApplied = payments.filter(p => p.type === "refund").reduce((s, p) => s + parseFloat(p.amount || 0), 0);
-  const grandTotal   = afterItems - billDiscount + 1;
-  const netTotal     = Math.max(0, grandTotal - refundApplied);
+  const grandTotal    = afterItems - billDiscount + 1;
+  const netTotal      = Math.max(0, grandTotal - refundApplied);
   const totalReceived = payments.filter(p => p.type !== "refund").reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
-  const change       = totalReceived - netTotal;
-  const canSave      = cart.length > 0;
+  const change        = totalReceived - netTotal;
+  const canSave = cart.length > 0;
 
   const saveBill = () => {
     if (!canSave) return;
@@ -928,7 +1370,7 @@ function POSScreen({ user, items, categories, billCounter, onLogout, onSaleSaved
     const totalDiscount = itemDiscount + billDiscount;
     const customerInfo  = { Name: ab.customerName || "Unknown", CellNo: ab.customerCell || "" };
     const isKnownCustomer = customerInfo.Name !== "Unknown" && customerInfo.CellNo !== "";
-    const payMethod    = isKnownCustomer ? "Credit" : "Cash";
+    const payMethod = isKnownCustomer ? "Credit" : "Cash";
     const bill = { billNo, date, time, cashier: user.Name, items: cart, subTotal, totalDiscount, itemDiscount, billDiscount, billDiscountPct: billDiscPct, grandTotal: netTotal, payments: [{ type: "cash", amount: String(netTotal), last4: "" }], change: 0, customerName: customerInfo.Name, customerCell: customerInfo.CellNo, refundApplied };
     onSaleSaved({ BillNo: billNo, Date: date, Time: time, Cashier: user.Name, GrandTotal: netTotal, Discount: totalDiscount, FBR: 1, PaymentMethod: payMethod, ItemsDetail: JSON.stringify(cart), items: cart, CustomerName: customerInfo.Name, CustomerCell: customerInfo.CellNo }, customerInfo);
     setLocalCounter(c => c + 1);
@@ -955,8 +1397,8 @@ function POSScreen({ user, items, categories, billCounter, onLogout, onSaleSaved
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
           <StatusBar isOnline={isOnline} sheetStatus={sheetStatus} lastSync={lastSync} onRefresh={onRefresh} />
-          <button className="btn" onClick={() => setShowReturn(true)} style={{ padding: "5px 10px", background: "rgba(255,150,0,0.12)", border: "1px solid rgba(255,150,0,0.3)", color: "#ff9500", fontSize: 12, borderRadius: 6 }}>↩ Return</button>
-          <button className="btn" onClick={() => setShowCalc(v => !v)} style={{ padding: "5px 10px", background: showCalc ? "rgba(0,180,255,0.25)" : "rgba(0,180,255,0.1)", border: "1px solid rgba(0,180,255,0.3)", color: "#00b4ff", fontSize: 14, borderRadius: 6 }}>🧮</button>
+          <button className="btn" onClick={() => setShowReturn(true)} title="Process Return/Refund" style={{ padding: "5px 10px", background: "rgba(255,150,0,0.12)", border: "1px solid rgba(255,150,0,0.3)", color: "#ff9500", fontSize: 12, borderRadius: 6 }}>↩ Return</button>
+          <button className="btn" onClick={() => setShowCalc(v => !v)} title="Calculator" style={{ padding: "5px 10px", background: showCalc ? "rgba(0,180,255,0.25)" : "rgba(0,180,255,0.1)", border: "1px solid rgba(0,180,255,0.3)", color: "#00b4ff", fontSize: 14, borderRadius: 6 }}>🧮</button>
           <button className="btn" onClick={toggleFS} style={{ padding: "5px 10px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "#fff", fontSize: 13, borderRadius: 6 }}>{isFS ? "⤡" : "⤢"}</button>
           <button className="btn" onClick={onLogout} style={{ padding: "5px 12px", background: "rgba(255,80,80,0.12)", border: "1px solid rgba(255,80,80,0.3)", color: "#ff6b6b", fontSize: 11, borderRadius: 6 }}>LOGOUT</button>
         </div>
@@ -988,10 +1430,19 @@ function POSScreen({ user, items, categories, billCounter, onLogout, onSaleSaved
           {/* Search */}
           <div style={{ position: "relative" }}>
             <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", color: "#00b4ff", fontSize: 18, pointerEvents: "none" }}>⌕</span>
-            <input ref={searchRef} value={search} onChange={handleSearchChange} onKeyDown={handleSearchKeyDown} autoFocus placeholder="Scan barcode or type item name..." style={{ ...inSt, paddingLeft: 36, fontSize: 14 }} tabIndex={1} />
+            <input
+              ref={searchRef}
+              value={search}
+              onChange={handleSearchChange}
+              onKeyDown={handleSearchKeyDown}
+              autoFocus
+              placeholder="Scan barcode or type item name..."
+              style={{ ...inSt, paddingLeft: 36, fontSize: 14 }}
+              tabIndex={1}
+            />
             {results.length > 0 && (
               <div ref={dropdownRef} style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#0c1828", border: "1px solid rgba(0,180,255,0.28)", borderRadius: 8, zIndex: 200, boxShadow: "0 8px 40px rgba(0,0,0,0.65)", maxHeight: 320, overflowY: "auto" }}>
-                <div style={{ padding: "4px 13px", background: "rgba(0,180,255,0.04)", borderBottom: "1px solid rgba(0,180,255,0.1)", color: "rgba(0,180,255,0.5)", fontSize: 9, letterSpacing: 1 }}>↑↓ NAVIGATE &nbsp;·&nbsp; ENTER SELECT → QTY &nbsp;·&nbsp; ESC CLOSE</div>
+                <div style={{ padding: "4px 13px", background: "rgba(0,180,255,0.04)", borderBottom: "1px solid rgba(0,180,255,0.1)", color: "rgba(0,180,255,0.5)", fontSize: 9, letterSpacing: 1 }}>↑↓ NAVIGATE &nbsp;·&nbsp; ENTER SELECT → QTY &nbsp;·&nbsp; ESC CLOSE &nbsp;·&nbsp; SCANNER SUPPORTED</div>
                 {results.map((item, i) => {
                   const stk = Number(item.Stock) || 0; const isKb = i === kbIndex;
                   return (
@@ -1027,7 +1478,7 @@ function POSScreen({ user, items, categories, billCounter, onLogout, onSaleSaved
                 <div style={{ padding: "5px 12px", background: "rgba(0,180,255,0.04)", color: "#00b4ff", fontSize: 10, letterSpacing: 3, fontWeight: 700, borderBottom: "1px solid rgba(0,180,255,0.08)" }}>── {cat.toUpperCase()} ──</div>
                 {grouped[cat].map(item => {
                   const disc = parseFloat(item.Discount || 0);
-                  const lt   = item.qty * parseFloat(item.Price || 0) - disc * item.qty;
+                  const lt = item.qty * parseFloat(item.Price || 0) - disc * item.qty;
                   const isFocusedQty = focusedQtyBarcode === item.Barcode;
                   return (
                     <div key={item.Barcode} style={{ display: "grid", gridTemplateColumns: "2fr 120px 90px 80px 88px 30px", padding: "8px 12px", borderBottom: "1px solid rgba(255,255,255,0.03)", alignItems: "center", background: isFocusedQty ? "rgba(0,180,255,0.04)" : "transparent", transition: "background 0.2s" }}>
@@ -1035,24 +1486,87 @@ function POSScreen({ user, items, categories, billCounter, onLogout, onSaleSaved
                         <div style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{item.ItemName}</div>
                         <div style={{ color: "rgba(255,255,255,0.28)", fontSize: 10 }}>{item.Barcode}{item.Stock <= 5 && <span style={{ color: "#ffd700", marginLeft: 6 }}>⚠ Low Stock</span>}</div>
                       </div>
+                      {/* ── QUANTITY CELL with focusable input ── */}
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
-                        <button className="btn" onClick={() => setQty(item.Barcode, item.qty - 1)} tabIndex={-1} style={{ width: 22, height: 22, background: "rgba(255,80,80,0.13)", border: "1px solid rgba(255,80,80,0.26)", color: "#ff8888", fontSize: 15, borderRadius: 4, padding: 0 }}>−</button>
+                        <button
+                          className="btn"
+                          onClick={() => { setQty(item.Barcode, item.qty - 1); }}
+                          tabIndex={-1}
+                          style={{ width: 22, height: 22, background: "rgba(255,80,80,0.13)", border: "1px solid rgba(255,80,80,0.26)", color: "#ff8888", fontSize: 15, borderRadius: 4, padding: 0 }}
+                        >−</button>
                         <input
                           ref={el => { qtyRefs.current[item.Barcode] = el; }}
-                          type="number" min="1" value={item.qty}
-                          onChange={e => { const v = parseInt(e.target.value); if (!isNaN(v) && v > 0) setQty(item.Barcode, v); else if (e.target.value === "") setQty(item.Barcode, 1); }}
+                          type="number"
+                          min="1"
+                          value={item.qty}
+                          onChange={e => {
+                            const v = parseInt(e.target.value);
+                            if (!isNaN(v) && v > 0) setQty(item.Barcode, v);
+                            else if (e.target.value === "") setQty(item.Barcode, 1);
+                          }}
                           onFocus={e => { e.target.select(); setFocusedQtyBarcode(item.Barcode); }}
-                          onBlur={() => { setTimeout(() => { const active = document.activeElement; const isAnotherQty = Object.values(qtyRefs.current).some(r => r === active); if (!isAnotherQty) setFocusedQtyBarcode(null); }, 100); }}
+                          onBlur={() => {
+                            // Only clear if focus isn't going to another qty input
+                            setTimeout(() => {
+                              const active = document.activeElement;
+                              const isAnotherQty = Object.values(qtyRefs.current).some(r => r === active);
+                              if (!isAnotherQty) setFocusedQtyBarcode(null);
+                            }, 100);
+                          }}
                           onKeyDown={e => {
-                            if (e.key === "Enter" || e.key === "Escape") { e.preventDefault(); setFocusedQtyBarcode(null); setTimeout(() => { if (searchRef.current) { searchRef.current.focus(); searchRef.current.select(); } }, 30); }
-                            if (e.key === "ArrowUp")   { e.preventDefault(); setQty(item.Barcode, item.qty + 1); }
-                            if (e.key === "ArrowDown") { e.preventDefault(); if (item.qty > 1) setQty(item.Barcode, item.qty - 1); }
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              // Go back to search
+                              setFocusedQtyBarcode(null);
+                              setTimeout(() => {
+                                if (searchRef.current) {
+                                  searchRef.current.focus();
+                                  searchRef.current.select();
+                                }
+                              }, 30);
+                            }
+                            if (e.key === "Escape") {
+                              e.preventDefault();
+                              setFocusedQtyBarcode(null);
+                              setTimeout(() => {
+                                if (searchRef.current) {
+                                  searchRef.current.focus();
+                                  searchRef.current.select();
+                                }
+                              }, 30);
+                            }
+                            if (e.key === "ArrowUp") {
+                              e.preventDefault();
+                              setQty(item.Barcode, item.qty + 1);
+                            }
+                            if (e.key === "ArrowDown") {
+                              e.preventDefault();
+                              if (item.qty > 1) setQty(item.Barcode, item.qty - 1);
+                            }
                           }}
                           className={isFocusedQty ? "qty-focus-input" : ""}
-                          style={{ width: 52, padding: "4px 6px", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(0,180,255,0.25)", borderRadius: 5, color: "#fff", fontSize: 14, fontWeight: 700, textAlign: "center", outline: "none", transition: "all 0.15s", MozAppearance: "textfield" }}
+                          style={{
+                            width: 52,
+                            padding: "4px 6px",
+                            background: "rgba(255,255,255,0.07)",
+                            border: "1px solid rgba(0,180,255,0.25)",
+                            borderRadius: 5,
+                            color: "#fff",
+                            fontSize: 14,
+                            fontWeight: 700,
+                            textAlign: "center",
+                            outline: "none",
+                            transition: "all 0.15s",
+                            MozAppearance: "textfield",
+                          }}
                           tabIndex={0}
                         />
-                        <button className="btn" onClick={() => setQty(item.Barcode, item.qty + 1)} tabIndex={-1} style={{ width: 22, height: 22, background: "rgba(0,180,255,0.13)", border: "1px solid rgba(0,180,255,0.26)", color: "#00b4ff", fontSize: 15, borderRadius: 4, padding: 0 }}>+</button>
+                        <button
+                          className="btn"
+                          onClick={() => { setQty(item.Barcode, item.qty + 1); }}
+                          tabIndex={-1}
+                          style={{ width: 22, height: 22, background: "rgba(0,180,255,0.13)", border: "1px solid rgba(0,180,255,0.26)", color: "#00b4ff", fontSize: 15, borderRadius: 4, padding: 0 }}
+                        >+</button>
                       </div>
                       <div style={{ color: "#e0e0e0", textAlign: "right", fontSize: 12 }}>{fmt(item.Price)}</div>
                       <div style={{ color: disc > 0 ? "#ffd700" : "rgba(255,255,255,0.22)", textAlign: "right", fontSize: 12 }}>{disc > 0 ? fmt(disc * item.qty) : "—"}</div>
@@ -1083,15 +1597,26 @@ function POSScreen({ user, items, categories, billCounter, onLogout, onSaleSaved
           </div>
         </div>
 
-        {/* RIGHT: Customer + Actions */}
+        {/* RIGHT: Customer Ledger + Actions */}
         <div style={{ width: 320, background: "rgba(255,255,255,0.012)", borderLeft: "1px solid rgba(255,255,255,0.06)", padding: 12, display: "flex", flexDirection: "column", gap: 10, overflowY: "auto" }}>
-          <CashierCustomerLedger customers={customers} sales={sales} currentBillTotal={netTotal} onSelectCustomer={(name, cell) => { setCustName(name); setCustCell(cell); }} selectedName={ab.customerName} selectedCell={ab.customerCell} onClear={() => { setCustName("Unknown"); setCustCell(""); }} />
+          {/* CUSTOMER LEDGER LOOKUP */}
+          <CashierCustomerLedger
+            customers={customers}
+            sales={sales}
+            currentBillTotal={netTotal}
+            onSelectCustomer={(name, cell) => { setCustName(name); setCustCell(cell); }}
+            selectedName={ab.customerName}
+            selectedCell={ab.customerCell}
+            onClear={() => { setCustName("Unknown"); setCustCell(""); }}
+          />
 
+          {/* REFUND APPLY */}
           <div style={{ background: "rgba(255,150,0,0.05)", border: "1px solid rgba(255,150,0,0.2)", borderRadius: 10, padding: "10px 12px" }}>
             <div style={{ color: "#ff9500", fontSize: 10, letterSpacing: 2, fontWeight: 700, marginBottom: 8 }}>↩ APPLY REFUND TO THIS BILL</div>
-            <RefundApplyPanel returns={returns} onApply={applyRefund} appliedPayments={payments} />
+           <RefundApplyPanel returns={returns} onApply={applyRefund} appliedPayments={payments} />
           </div>
 
+          {/* Bill Summary (no payment input) */}
           <div style={{ background: "rgba(0,180,255,0.04)", border: "1px solid rgba(0,180,255,0.13)", borderRadius: 10, padding: 13 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 12, color: "rgba(255,255,255,0.48)" }}><span>Grand Total</span><span style={{ color: "#fff" }}>PKR {fmt(netTotal)}</span></div>
             {refundApplied > 0 && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 12, color: "#ff9500" }}><span>Refund Applied</span><span>− PKR {fmt(refundApplied)}</span></div>}
@@ -1106,6 +1631,7 @@ function POSScreen({ user, items, categories, billCounter, onLogout, onSaleSaved
             ))}
           </div>
 
+          {/* Actions — VOID + SAVE & PRINT only */}
           <div style={{ display: "flex", gap: 7 }}>
             <button className="btn" onClick={voidCart} tabIndex={-1} style={{ flex: 1, padding: 11, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.26)", color: "#ff6b6b", fontSize: 12, borderRadius: 8 }}>🗑 VOID</button>
             <button className="btn" onClick={saveBill} disabled={cart.length === 0} tabIndex={7} style={{ flex: 2, padding: 11, background: cart.length > 0 ? "linear-gradient(135deg,#00a651,#00e5a0)" : "rgba(255,255,255,0.04)", border: "none", color: cart.length > 0 ? "#000" : "rgba(255,255,255,0.16)", fontSize: 12, fontWeight: 700, borderRadius: 8, letterSpacing: 1 }}>
@@ -1116,48 +1642,72 @@ function POSScreen({ user, items, categories, billCounter, onLogout, onSaleSaved
         </div>
       </div>
 
-      {showCalc   && <Calculator onClose={() => setShowCalc(false)} />}
+      {showCalc && <Calculator onClose={() => setShowCalc(false)} />}
       {showReturn && <ReturnModal user={user} sales={sales} items={items} returnCounter={returnCounter} onReturnSaved={ret => { onReturnSaved(ret); setShowReturn(false); }} onClose={() => setShowReturn(false)} />}
     </div>
   );
 }
 
-// ─── CASHIER CUSTOMER LEDGER ──────────────────────────────────────────────────
+// ─── CASHIER CUSTOMER LEDGER LOOKUP ──────────────────────────────────────────
 function CashierCustomerLedger({ customers, sales, currentBillTotal, onSelectCustomer, selectedName, selectedCell, onClear }) {
-  const [query,   setQuery]   = useState("");
-  const [results, setResults] = useState([]);
+  const [query, setQuery]       = useState("");
+  const [results, setResults]   = useState([]);
+  const [selected, setSelected] = useState(null);
 
   useEffect(() => {
     const q = query.trim().toLowerCase();
     if (!q) { setResults([]); return; }
-    setResults(customers.filter(c => c.Name?.toLowerCase().includes(q) || c.CellNo?.includes(q)).slice(0, 6));
+    setResults(customers.filter(c =>
+      c.Name?.toLowerCase().includes(q) || c.CellNo?.includes(q)
+    ).slice(0, 6));
   }, [query, customers]);
 
+  // compute pending for a customer
   const getPending = (c) => {
-    const billNos  = (c.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
-    const total    = billNos.reduce((s, bn) => { const sale = sales.find(s => s.BillNo === bn); return s + parseFloat(sale?.GrandTotal || 0); }, 0);
+    const billNos = (c.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
+    const totalBills = billNos.reduce((s, bn) => {
+      const sale = sales.find(s => s.BillNo === bn);
+      return s + parseFloat(sale?.GrandTotal || 0);
+    }, 0);
     const totalPaid = (c.payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0);
-    return Math.max(0, total - totalPaid);
+    return Math.max(0, totalBills - totalPaid);
   };
 
-  const handleSelect = (c) => { setQuery(""); setResults([]); onSelectCustomer(c.Name, c.CellNo); };
-  const isSelected   = selectedName && selectedName !== "Unknown";
-  const selCustomer  = isSelected ? (customers.find(c => c.CellNo === selectedCell) || null) : null;
-  const pending      = selCustomer ? getPending(selCustomer) : 0;
+  const handleSelect = (c) => {
+    setSelected(c);
+    setQuery("");
+    setResults([]);
+    onSelectCustomer(c.Name, c.CellNo);
+  };
+
+  const handleClear = () => {
+    setSelected(null);
+    onClear();
+  };
+
+  const isSelected = selectedName && selectedName !== "Unknown";
+  const selCustomer = isSelected ? (customers.find(c => c.CellNo === selectedCell) || null) : null;
+  const pending = selCustomer ? getPending(selCustomer) : 0;
 
   return (
     <div style={{ background: "rgba(0,180,255,0.05)", border: "1px solid rgba(0,180,255,0.18)", borderRadius: 10, padding: "10px 12px" }}>
       <div style={{ color: "rgba(0,180,255,0.8)", fontSize: 10, letterSpacing: 2, fontWeight: 700, marginBottom: 8 }}>👤 CUSTOMER LEDGER</div>
       {!isSelected ? (
         <div style={{ position: "relative" }}>
-          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by name or cell number..." style={{ ...inSt, padding: "7px 11px", fontSize: 12, border: "1px solid rgba(0,180,255,0.2)", width: "100%" }} />
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search by name or cell number..."
+            style={{ ...inSt, padding: "7px 11px", fontSize: 12, border: "1px solid rgba(0,180,255,0.2)", width: "100%" }}
+          />
           {results.length > 0 && (
             <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#0c1828", border: "1px solid rgba(0,180,255,0.28)", borderRadius: 8, zIndex: 200, boxShadow: "0 8px 30px rgba(0,0,0,0.6)" }}>
               {results.map((c, i) => {
                 const p = getPending(c);
                 return (
                   <div key={i} onClick={() => handleSelect(c)} style={{ padding: "9px 12px", cursor: "pointer", borderBottom: "1px solid rgba(255,255,255,0.04)", display: "flex", justifyContent: "space-between", alignItems: "center" }}
-                    onMouseEnter={e => e.currentTarget.style.background = "rgba(0,180,255,0.1)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    onMouseEnter={e => e.currentTarget.style.background = "rgba(0,180,255,0.1)"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                     <div>
                       <div style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>{c.Name}</div>
                       <div style={{ color: "rgba(0,180,255,0.7)", fontSize: 10, fontFamily: "monospace" }}>{c.CellNo}</div>
@@ -1176,7 +1726,7 @@ function CashierCustomerLedger({ customers, sales, currentBillTotal, onSelectCus
               <div style={{ color: "#fff", fontWeight: 700, fontSize: 13 }}>{selectedName}</div>
               <div style={{ color: "rgba(0,180,255,0.7)", fontSize: 11, fontFamily: "monospace" }}>{selectedCell}</div>
             </div>
-            <button className="btn" onClick={onClear} style={{ padding: "4px 9px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 11, borderRadius: 5 }}>✕</button>
+            <button className="btn" onClick={handleClear} style={{ padding: "4px 9px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 11, borderRadius: 5 }}>✕</button>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             {pending > 0 && (
@@ -1206,10 +1756,12 @@ function RefundApplyPanel({ returns, onApply, appliedPayments }) {
   const [found,    setFound]    = useState(null);
   const [msg,      setMsg]      = useState("");
 
-  const alreadyApplied = found && (
-    found.usedInBill === true || found.UsedInBill === "1" || found.UsedInBill === "true" ||
-    appliedPayments.some(p => p.type === "refund" && p.origReturnNo === found.ReturnNo)
-  );
+const alreadyApplied = found && (
+  found.usedInBill === true ||
+  found.UsedInBill === "1" ||
+  found.UsedInBill === "true" ||
+  appliedPayments.some(p => p.type === "refund" && p.origReturnNo === found.ReturnNo)
+);
 
   const lookup = () => {
     const q = returnNo.trim().toUpperCase();
@@ -1239,7 +1791,9 @@ function RefundApplyPanel({ returns, onApply, appliedPayments }) {
       {msg && <div style={{ fontSize: 11, color: msg.startsWith("✅") ? "#00e5a0" : "#ff6b6b", marginBottom: 6 }}>{msg}</div>}
       {found && !alreadyApplied && (
         <div style={{ background: "rgba(255,150,0,0.06)", border: "1px solid rgba(255,150,0,0.2)", borderRadius: 7, padding: "8px 10px" }}>
-          <div style={{ color: "#fff", fontSize: 11, marginBottom: 8 }}>{found.ReturnNo} — {found.Date} — Orig Bill #{found.OrigBillNo}</div>
+          <div style={{ color: "#fff", fontSize: 11, marginBottom: 8 }}>
+            {found.ReturnNo} — {found.Date} — Orig Bill #{found.OrigBillNo}
+          </div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 11 }}>Refund Amount</span>
             <span style={{ color: "#ff9500", fontWeight: 700, fontSize: 15 }}>PKR {fmt(found.RefundAmount)}</span>
@@ -1248,23 +1802,22 @@ function RefundApplyPanel({ returns, onApply, appliedPayments }) {
         </div>
       )}
       {alreadyApplied && (
-        <div style={{ fontSize: 11, color: "#ff6b6b", padding: "7px 10px", background: "rgba(255,80,80,0.07)", border: "1px solid rgba(255,80,80,0.2)", borderRadius: 6 }}>
-          ⛔ Return {found?.ReturnNo} has already been used in a bill.
-        </div>
-      )}
+  <div style={{ fontSize: 11, color: "#ff6b6b", padding: "7px 10px", background: "rgba(255,80,80,0.07)", border: "1px solid rgba(255,80,80,0.2)", borderRadius: 6 }}>
+    ⛔ Return {found?.ReturnNo} has already been used in a bill.
+  </div>
+)}
     </div>
   );
 }
-
 // ─── RETURN MODAL ─────────────────────────────────────────────────────────────
 function ReturnModal({ user, sales, items, returnCounter, onReturnSaved, onClose }) {
-  const [step,       setStep]       = useState(1);
-  const [billNo,     setBillNo]     = useState("");
-  const [foundSale,  setFoundSale]  = useState(null);
-  const [saleItems,  setSaleItems]  = useState([]);
-  const [returnQtys, setReturnQtys] = useState({});
-  const [reason,     setReason]     = useState("Customer Return");
-  const [msg,        setMsg]        = useState("");
+  const [step,         setStep]         = useState(1);
+  const [billNo,       setBillNo]       = useState("");
+  const [foundSale,    setFoundSale]    = useState(null);
+  const [saleItems,    setSaleItems]    = useState([]);
+  const [returnQtys,   setReturnQtys]   = useState({});
+  const [reason,       setReason]       = useState("Customer Return");
+  const [msg,          setMsg]          = useState("");
 
   const findBill = () => {
     const s = sales.find(s => s.BillNo === billNo.trim().padStart(4, "0") || s.BillNo === billNo.trim());
@@ -1301,6 +1854,7 @@ function ReturnModal({ user, sales, items, returnCounter, onReturnSaved, onClose
           <div style={{ fontFamily: "Orbitron", color: "#ff9500", fontSize: 15 }}>↩ RETURN / REFUND</div>
           <button className="btn" onClick={onClose} style={{ padding: "4px 10px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 13, borderRadius: 6 }}>✕</button>
         </div>
+
         {step === 1 && (
           <div>
             <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 12, marginBottom: 12 }}>Enter the original bill number to process a return.</div>
@@ -1311,6 +1865,7 @@ function ReturnModal({ user, sales, items, returnCounter, onReturnSaved, onClose
             {msg && <div style={{ color: "#ff6b6b", fontSize: 12, marginTop: 8 }}>{msg}</div>}
           </div>
         )}
+
         {step === 2 && foundSale && (
           <div>
             <div style={{ background: "rgba(255,150,0,0.06)", border: "1px solid rgba(255,150,0,0.2)", borderRadius: 9, padding: "10px 14px", marginBottom: 16 }}>
@@ -1361,8 +1916,8 @@ function ReturnModal({ user, sales, items, returnCounter, onReturnSaved, onClose
 // ADMIN SCREEN
 // ═══════════════════════════════════════════════════════════════════════════════
 function AdminScreen({ user, items, setItems, categories, setCategories, cashiers, setCashiers, sales, setSales, customers, setCustomers, returns, setReturns, onLogout, onRefresh, sheetStatus, safeCallScript, lastSync, isOnline, returnCounter, setReturnCounter, onReturnSaved }) {
-  const [tab,  setTab]  = useState("items");
-  const [isFS, setIsFS] = useState(false);
+  const [tab,   setTab]   = useState("items");
+  const [isFS,  setIsFS]  = useState(false);
   const toggleFS = () => { if (!document.fullscreenElement) { document.documentElement.requestFullscreen().catch(() => {}); setIsFS(true); } else { document.exitFullscreen(); setIsFS(false); } };
   const TABS = [{ id: "items", label: "📦 Items" }, { id: "categories", label: "🏷 Categories" }, { id: "cashiers", label: "👤 Cashiers" }, { id: "sales", label: "📊 Sales" }, { id: "returns", label: "↩ Returns" }, { id: "profit", label: "💰 Profit" }, { id: "stock", label: "📉 Stock" }, { id: "customers", label: "🧑‍🤝‍🧑 Customers" }, { id: "setup", label: "⚙️ Setup" }];
   return (
@@ -1401,18 +1956,19 @@ function AdminScreen({ user, items, setItems, categories, setCategories, cashier
 // ── ITEMS TAB ─────────────────────────────────────────────────────────────────
 function ItemsTab({ items, setItems, categories, safeCallScript }) {
   const [editing,   setEditing]   = useState(null);
-  const [form,      setForm]      = useState({ Barcode: "", Category: "", Company: "", ItemName: "", Price: "", CostPrice: "", Discount: "0", Stock: "", ExpiryDate: "" });
-  const [search,    setSearch]    = useState("");
-  const [filterCat, setFilterCat] = useState("All");
-  const [filterCo,  setFilterCo]  = useState("All");
+  const [form,      setForm]      = useState({ Barcode: "", Category: "", Company: "", ItemName: "", Price: "", CostPrice: "", Discount: "0", Stock: "" });
+  const [search,    setSearch]    = useState(""); const [filterCat, setFilterCat] = useState("All"); const [filterCo, setFilterCo] = useState("All");
   const companies = [...new Set(items.map(i => i.Company || "").filter(Boolean))].sort();
   const filtered  = items.filter(i => (filterCat === "All" || i.Category === filterCat) && (filterCo === "All" || i.Company === filterCo) && (!search || i.ItemName?.toLowerCase().includes(search.toLowerCase()) || i.Barcode?.includes(search)));
-  const startAdd  = () => { setEditing("new"); setForm({ Barcode: "", Category: categories[0] || "", Company: "", ItemName: "", Price: "", CostPrice: "", Discount: "0", Stock: "", ExpiryDate: "" }); };
+  const startAdd  = () => { setEditing("new"); setForm({ Barcode: "", Category: categories[0] || "", Company: "", ItemName: "", Price: "", CostPrice: "", Discount: "0", Stock: "" }); };
   const startEdit = item => { setEditing(item.Barcode); setForm({ ...item }); };
   const save = async () => {
     if (!form.Barcode || !form.ItemName || !form.Price) return;
     if (editing === "new") setItems(p => [...p, form]); else setItems(p => p.map(i => i.Barcode === editing ? form : i));
-    try { await dbPut("items", { ...form, id: form.Barcode }); } catch (e) { }
+    try {
+      if (editing === "new") await dbPut("items", { ...form, id: form.Barcode });
+      else await dbPut("items", { ...form, id: form.Barcode });
+    } catch (e) { }
     safeCallScript({ action: editing === "new" ? "addItem" : "editItem", ...form }); setEditing(null);
   };
   const del = async bc => {
@@ -1435,14 +1991,21 @@ function ItemsTab({ items, setItems, categories, safeCallScript }) {
         <div style={{ background: "rgba(0,180,255,0.04)", border: "1px solid rgba(0,180,255,0.17)", borderRadius: 11, padding: 18, marginBottom: 16 }}>
           <div style={{ color: "#00b4ff", fontSize: 11, letterSpacing: 2, marginBottom: 13, fontWeight: 700 }}>{editing === "new" ? "➕ ADD NEW ITEM" : "✏️ EDIT ITEM"}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(165px,1fr))", gap: 11 }}>
-            {[["Barcode","Barcode","text"],["ItemName","Item Name","text"],["Company","Company","text"],["Price","Selling Price (PKR)","number"],["CostPrice","Cost Price (PKR)","number"],["Discount","Item Discount (PKR)","number"],["Stock","Stock Qty","number"]].map(([k, l, t]) => (
-              <div key={k}><label style={lbSt}>{l}</label><input type={t} value={form[k] || ""} onChange={e => setForm(p => ({ ...p, [k]: e.target.value }))} style={inSt} /></div>
-            ))}
-            <div>
-              <label style={lbSt}>EXPIRY DATE</label>
-              <input type="date" value={form.ExpiryDate || ""} onChange={e => setForm(p => ({ ...p, ExpiryDate: e.target.value }))} style={{ ...inSt, border: form.ExpiryDate ? `1px solid ${getExpiryStatus(form.ExpiryDate).color}` : "1px solid rgba(0,180,255,0.22)", colorScheme: "dark" }} />
-              {form.ExpiryDate && (() => { const es = getExpiryStatus(form.ExpiryDate); return (<div style={{ marginTop: 5, fontSize: 11, color: es.color, fontWeight: 600 }}>{es.status === "expired" ? "⛔" : es.status === "critical" || es.status === "today" ? "⚠️" : "✅"} {es.label}</div>); })()}
-            </div>
+            {[["Barcode", "Barcode", "text"], ["ItemName", "Item Name", "text"], ["Company", "Company", "text"], ["Price", "Selling Price (PKR)", "number"], ["CostPrice", "Cost Price (PKR)", "number"], ["Discount", "Item Discount (PKR)", "number"], ["Stock", "Stock Qty", "number"]].map(([k, l, t]) => (
+  <div key={k}><label style={lbSt}>{l}</label><input type={t} value={form[k] || ""} onChange={e => setForm(p => ({ ...p, [k]: e.target.value }))} style={inSt} /></div>
+))}
+<div>
+  <label style={lbSt}>EXPIRY DATE</label>
+  <input
+    type="date"
+    value={form.ExpiryDate || ""}
+    onChange={e => setForm(p => ({ ...p, ExpiryDate: e.target.value }))}
+    style={{ ...inSt, border: form.ExpiryDate ? `1px solid ${getExpiryStatus(form.ExpiryDate).color}` : "1px solid rgba(0,180,255,0.22)", colorScheme: "dark" }}
+  />
+  {form.ExpiryDate && (() => { const es = getExpiryStatus(form.ExpiryDate); return (
+    <div style={{ marginTop: 5, fontSize: 11, color: es.color, fontWeight: 600 }}>{es.status === "expired" ? "⛔" : es.status === "critical" || es.status === "today" ? "⚠️" : "✅"} {es.label}</div>
+  ); })()}
+</div>
             <div><label style={lbSt}>Category</label><select value={form.Category} onChange={e => setForm(p => ({ ...p, Category: e.target.value }))} style={slSt}>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
           </div>
           {form.Price && form.CostPrice && parseFloat(form.Price) > 0 && (
@@ -1458,27 +2021,32 @@ function ItemsTab({ items, setItems, categories, safeCallScript }) {
       )}
       <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
         <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 100px 100px 75px 70px 70px 70px 100px 90px", padding: "8px 12px", background: "rgba(0,180,255,0.07)", color: "rgba(0,180,255,0.72)", fontSize: 10, letterSpacing: 2, fontWeight: 700 }}>
-          <div>BARCODE</div><div>ITEM NAME</div><div>CATEGORY</div><div>COMPANY</div><div style={{ textAlign: "right" }}>PRICE</div><div style={{ textAlign: "right" }}>COST</div><div style={{ textAlign: "right" }}>DISC</div><div style={{ textAlign: "right" }}>STOCK</div><div style={{ textAlign: "center" }}>EXPIRY</div><div style={{ textAlign: "center" }}>ACTIONS</div>
-        </div>
+  <div>BARCODE</div><div>ITEM NAME</div><div>CATEGORY</div><div>COMPANY</div><div style={{ textAlign: "right" }}>PRICE</div><div style={{ textAlign: "right" }}>COST</div><div style={{ textAlign: "right" }}>DISC</div><div style={{ textAlign: "right" }}>STOCK</div><div style={{ textAlign: "center" }}>EXPIRY</div><div style={{ textAlign: "center" }}>ACTIONS</div>
+</div>
         {filtered.map((item, idx) => {
           const stk = Number(item.Stock) || 0;
           const profit = parseFloat(item.Price || 0) - parseFloat(item.CostPrice || 0);
           return (
-            <div key={idx} style={{ display: "grid", gridTemplateColumns: "110px 1fr 100px 100px 75px 70px 70px 70px 100px 90px", padding: "8px 12px", borderBottom: "1px solid rgba(255,255,255,0.03)", alignItems: "center", background: stk <= 0 ? "rgba(255,50,50,0.03)" : stk <= 5 ? "rgba(255,200,0,0.03)" : "transparent" }}>
-              <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>{item.Barcode}</div>
-              <div style={{ color: "#fff", fontSize: 12, fontWeight: 500 }}>{item.ItemName}</div>
-              <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>{item.Category}</div>
-              <div style={{ color: "rgba(0,180,255,0.7)", fontSize: 11 }}>{item.Company || "—"}</div>
-              <div style={{ color: "#00b4ff", textAlign: "right", fontWeight: 700, fontSize: 12 }}>{fmt(item.Price)}</div>
-              <div style={{ color: profit > 0 ? "#00e5a0" : "rgba(255,255,255,0.3)", textAlign: "right", fontSize: 11 }} title={`Profit: PKR ${fmt(profit)}`}>{item.CostPrice ? fmt(item.CostPrice) : "—"}</div>
-              <div style={{ color: parseFloat(item.Discount) > 0 ? "#ffd700" : "rgba(255,255,255,0.22)", textAlign: "right", fontSize: 12 }}>{item.Discount}</div>
-              <div style={{ textAlign: "right", fontWeight: 700, fontSize: 12, color: stk <= 0 ? "#ff6b6b" : stk <= 5 ? "#ffd700" : "#00e5a0" }}>{item.Stock}{stk <= 0 ? " ❌" : stk <= 5 ? " ⚠️" : ""}</div>
-              {(() => { const es = getExpiryStatus(item.ExpiryDate); return (<div style={{ textAlign: "center" }}><div style={{ color: es.color, fontSize: 10, fontWeight: 700 }}>{fmtExpiry(item.ExpiryDate)}</div>{item.ExpiryDate && <div style={{ fontSize: 9, color: es.color, opacity: 0.85 }}>{es.label}</div>}</div>); })()}
-              <div style={{ display: "flex", gap: 5, justifyContent: "center" }}>
-                <button className="btn" onClick={() => startEdit(item)} style={{ padding: "4px 9px", background: "rgba(0,180,255,0.1)", border: "1px solid rgba(0,180,255,0.2)", color: "#00b4ff", fontSize: 11, borderRadius: 5 }}>Edit</button>
-                <button className="btn" onClick={() => del(item.Barcode)} style={{ padding: "4px 9px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 11, borderRadius: 5 }}>Del</button>
-              </div>
-            </div>
+           <div key={idx} style={{ display: "grid", gridTemplateColumns: "110px 1fr 100px 100px 75px 70px 70px 70px 100px 90px", padding: "8px 12px", borderBottom: "1px solid rgba(255,255,255,0.03)", alignItems: "center", background: stk <= 0 ? "rgba(255,50,50,0.03)" : stk <= 5 ? "rgba(255,200,0,0.03)" : "transparent" }}>
+  <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>{item.Barcode}</div>
+  <div style={{ color: "#fff", fontSize: 12, fontWeight: 500 }}>{item.ItemName}</div>
+  <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>{item.Category}</div>
+  <div style={{ color: "rgba(0,180,255,0.7)", fontSize: 11 }}>{item.Company || "—"}</div>
+  <div style={{ color: "#00b4ff", textAlign: "right", fontWeight: 700, fontSize: 12 }}>{fmt(item.Price)}</div>
+  <div style={{ color: profit > 0 ? "#00e5a0" : "rgba(255,255,255,0.3)", textAlign: "right", fontSize: 11 }} title={`Profit: PKR ${fmt(profit)}`}>{item.CostPrice ? fmt(item.CostPrice) : "—"}</div>
+  <div style={{ color: parseFloat(item.Discount) > 0 ? "#ffd700" : "rgba(255,255,255,0.22)", textAlign: "right", fontSize: 12 }}>{item.Discount}</div>
+  <div style={{ textAlign: "right", fontWeight: 700, fontSize: 12, color: stk <= 0 ? "#ff6b6b" : stk <= 5 ? "#ffd700" : "#00e5a0" }}>{item.Stock}{stk <= 0 ? " ❌" : stk <= 5 ? " ⚠️" : ""}</div>
+  {(() => { const es = getExpiryStatus(item.ExpiryDate); return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ color: es.color, fontSize: 10, fontWeight: 700 }}>{fmtExpiry(item.ExpiryDate)}</div>
+      {item.ExpiryDate && <div style={{ fontSize: 9, color: es.color, opacity: 0.85 }}>{es.label}</div>}
+    </div>
+  ); })()}
+  <div style={{ display: "flex", gap: 5, justifyContent: "center" }}>
+    <button className="btn" onClick={() => startEdit(item)} style={{ padding: "4px 9px", background: "rgba(0,180,255,0.1)", border: "1px solid rgba(0,180,255,0.2)", color: "#00b4ff", fontSize: 11, borderRadius: 5 }}>Edit</button>
+    <button className="btn" onClick={() => del(item.Barcode)} style={{ padding: "4px 9px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 11, borderRadius: 5 }}>Del</button>
+  </div>
+</div>
           );
         })}
       </div>
@@ -1490,7 +2058,7 @@ function ItemsTab({ items, setItems, categories, safeCallScript }) {
 function ReturnsTab({ returns }) {
   const [filterDate, setFilterDate] = useState("");
   const [viewRet,    setViewRet]    = useState(null);
-  const filtered    = returns.filter(r => !filterDate || filterDateMatch(r.Date, filterDate));
+  const filtered = returns.filter(r => !filterDate || filterDateMatch(r.Date, filterDate));
   const totalRefund = filtered.reduce((s, r) => s + parseFloat(r.RefundAmount || 0), 0);
   return (
     <div>
@@ -1563,10 +2131,12 @@ function ProfitTab({ sales, items, returns }) {
   const cashierList = [...new Set(sales.map(s => s.Cashier).filter(Boolean))];
   const categories  = [...new Set(items.map(i => i.Category).filter(Boolean))].sort();
   const itemMap     = new Map(items.map(i => [i.Barcode, i]));
-  const filtered    = sales.filter(s => filterDateMatch(s.Date, filterDate) && (filterCashier === "All" || s.Cashier === filterCashier));
+
+  const filtered = sales.filter(s => filterDateMatch(s.Date, filterDate) && (filterCashier === "All" || s.Cashier === filterCashier));
 
   let totalRevenue = 0, totalCost = 0, totalDiscount = 0, totalRefund = 0;
-  const categoryProfit = {}; const topItems = {};
+  const categoryProfit = {};
+  const topItems = {};
 
   filtered.forEach(sale => {
     const saleItems = safeParseItems(sale.ItemsDetail);
@@ -1580,7 +2150,8 @@ function ProfitTab({ sales, items, returns }) {
       const revenue    = (sellPrice - disc) * qty;
       const cost       = costPrice * qty;
       const profit     = revenue - cost;
-      totalRevenue += revenue; totalCost += cost;
+      totalRevenue += revenue;
+      totalCost    += cost;
       const cat = si.Category || "Unknown";
       if (!categoryProfit[cat]) categoryProfit[cat] = { revenue: 0, cost: 0, profit: 0, qty: 0 };
       categoryProfit[cat].revenue += revenue; categoryProfit[cat].cost += cost; categoryProfit[cat].profit += profit; categoryProfit[cat].qty += qty;
@@ -1596,6 +2167,7 @@ function ProfitTab({ sales, items, returns }) {
   const netRevenue = totalRevenue - totalRefund;
   const netProfit  = netRevenue - totalCost;
   const margin     = netRevenue > 0 ? (netProfit / netRevenue * 100).toFixed(1) : 0;
+
   const topItemsList = Object.entries(topItems).sort((a, b) => b[1].profit - a[1].profit).slice(0, 10);
 
   return (
@@ -1606,19 +2178,21 @@ function ProfitTab({ sales, items, returns }) {
         <div><label style={{ ...lbSt, marginBottom: 4 }}>Category</label><select value={filterCat} onChange={e => setFilterCat(e.target.value)} style={slSt}><option value="All">All</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
         <button className="btn" onClick={() => { setFilterDate(""); setFilterCashier("All"); setFilterCat("All"); }} style={{ padding: "9px 14px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.45)", borderRadius: 7 }}>Clear</button>
       </div>
+
       {totalCost === 0 && (
         <div style={{ background: "rgba(255,200,0,0.07)", border: "1px solid rgba(255,200,0,0.25)", borderRadius: 10, padding: "14px 18px", marginBottom: 16, color: "#ffd700", fontSize: 12 }}>
-          ⚠ Cost prices not set. Go to Items tab → Edit and add Cost Price for accurate profit calculation.
+          ⚠ Cost prices not set for some items. Go to <b>Items tab → Edit</b> and add <b>Cost Price</b> for accurate profit calculation.
         </div>
       )}
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 11, marginBottom: 18 }}>
         {[
-          { label: "Net Revenue",    value: `PKR ${fmt(netRevenue)}`,   color: "#00b4ff", icon: "💰" },
-          { label: "Total Cost",     value: `PKR ${fmt(totalCost)}`,    color: "#ff6b6b", icon: "🏭" },
-          { label: "NET PROFIT",     value: `PKR ${fmt(netProfit)}`,    color: netProfit >= 0 ? "#00e5a0" : "#ff6b6b", icon: "📈" },
-          { label: "Profit Margin",  value: `${margin}%`,               color: "#ffd700", icon: "%" },
-          { label: "Total Discount", value: `PKR ${fmt(totalDiscount)}`,color: "#a78bfa", icon: "🏷" },
-          { label: "Refunds",        value: `PKR ${fmt(totalRefund)}`,  color: "#ff9500", icon: "↩" },
+          { label: "Net Revenue",   value: `PKR ${fmt(netRevenue)}`,  color: "#00b4ff",  icon: "💰" },
+          { label: "Total Cost",    value: `PKR ${fmt(totalCost)}`,   color: "#ff6b6b",  icon: "🏭" },
+          { label: "NET PROFIT",    value: `PKR ${fmt(netProfit)}`,   color: netProfit >= 0 ? "#00e5a0" : "#ff6b6b", icon: "📈" },
+          { label: "Profit Margin", value: `${margin}%`,              color: "#ffd700",  icon: "%" },
+          { label: "Total Discount",value: `PKR ${fmt(totalDiscount)}`,color:"#a78bfa",  icon: "🏷" },
+          { label: "Refunds",       value: `PKR ${fmt(totalRefund)}`, color: "#ff9500",  icon: "↩" },
         ].map((card, i) => (
           <div key={i} style={{ background: "rgba(255,255,255,0.025)", border: `1px solid ${card.color}26`, borderRadius: 11, padding: "14px 17px" }}>
             <div style={{ fontSize: 19, marginBottom: 5 }}>{card.icon}</div>
@@ -1627,23 +2201,37 @@ function ProfitTab({ sales, items, returns }) {
           </div>
         ))}
       </div>
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
           <div style={{ padding: "10px 14px", background: "rgba(0,180,255,0.07)", color: "rgba(0,180,255,0.8)", fontSize: 11, letterSpacing: 2, fontWeight: 700 }}>PROFIT BY CATEGORY</div>
           {Object.entries(categoryProfit).sort((a, b) => b[1].profit - a[1].profit).map(([cat, data], i) => (
             <div key={i} style={{ padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div><div style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>{cat}</div><div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10 }}>Revenue: PKR {fmt(data.revenue)} · Qty: {data.qty}</div></div>
-              <div style={{ textAlign: "right" }}><div style={{ color: data.profit >= 0 ? "#00e5a0" : "#ff6b6b", fontWeight: 700, fontSize: 13 }}>PKR {fmt(data.profit)}</div><div style={{ color: "rgba(255,255,255,0.3)", fontSize: 10 }}>{data.revenue > 0 ? (data.profit / data.revenue * 100).toFixed(1) : 0}%</div></div>
+              <div>
+                <div style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>{cat}</div>
+                <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10 }}>Revenue: PKR {fmt(data.revenue)} · Qty: {data.qty}</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ color: data.profit >= 0 ? "#00e5a0" : "#ff6b6b", fontWeight: 700, fontSize: 13 }}>PKR {fmt(data.profit)}</div>
+                <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 10 }}>{data.revenue > 0 ? (data.profit / data.revenue * 100).toFixed(1) : 0}%</div>
+              </div>
             </div>
           ))}
           {Object.keys(categoryProfit).length === 0 && <div style={{ padding: 20, color: "rgba(255,255,255,0.2)", textAlign: "center", fontSize: 12 }}>No data</div>}
         </div>
+
         <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
           <div style={{ padding: "10px 14px", background: "rgba(0,200,100,0.07)", color: "rgba(0,200,100,0.8)", fontSize: 11, letterSpacing: 2, fontWeight: 700 }}>TOP ITEMS BY PROFIT</div>
           {topItemsList.map(([bc, data], i) => (
             <div key={i} style={{ padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div><div style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>{data.name || bc}</div><div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10 }}>Sold: {data.qty} units</div></div>
-              <div style={{ textAlign: "right" }}><div style={{ color: "#00e5a0", fontWeight: 700, fontSize: 13 }}>PKR {fmt(data.profit)}</div><div style={{ color: "rgba(255,255,255,0.3)", fontSize: 10 }}>Rev: PKR {fmt(data.revenue)}</div></div>
+              <div>
+                <div style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>{data.name || bc}</div>
+                <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10 }}>Sold: {data.qty} units</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ color: "#00e5a0", fontWeight: 700, fontSize: 13 }}>PKR {fmt(data.profit)}</div>
+                <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 10 }}>Rev: PKR {fmt(data.revenue)}</div>
+              </div>
             </div>
           ))}
           {topItemsList.length === 0 && <div style={{ padding: 20, color: "rgba(255,255,255,0.2)", textAlign: "center", fontSize: 12 }}>No data</div>}
@@ -1695,7 +2283,7 @@ function CashiersTab({ cashiers, setCashiers, safeCallScript }) {
         <div style={{ background: "rgba(0,180,255,0.04)", border: "1px solid rgba(0,180,255,0.17)", borderRadius: 11, padding: 18, marginBottom: 16 }}>
           <div style={{ color: "#00b4ff", fontSize: 11, letterSpacing: 2, marginBottom: 13, fontWeight: 700 }}>{editing === "__new__" ? "➕ ADD USER" : "✏️ EDIT USER"}</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 11 }}>
-            {[["Name","Full Name"],["Username","Username"],["PIN","PIN Code"]].map(([k, l]) => (
+            {[["Name", "Full Name"], ["Username", "Username"], ["PIN", "PIN Code"]].map(([k, l]) => (
               <div key={k}><label style={lbSt}>{l}</label><input value={form[k]} onChange={e => setForm(p => ({ ...p, [k]: e.target.value }))} style={inSt} type={k === "PIN" ? "password" : "text"} /></div>
             ))}
             <div><label style={lbSt}>Role</label><select value={form.Role} onChange={e => setForm(p => ({ ...p, Role: e.target.value }))} style={slSt}><option value="cashier">Cashier</option><option value="admin">Admin</option></select></div>
@@ -1734,6 +2322,7 @@ function SalesTab({ sales, setSales }) {
   const filtered    = sales.filter(s => filterDateMatch(s.Date, filterDate) && (filterCashier === "All" || s.Cashier === filterCashier));
   const totalRev    = filtered.reduce((s, r) => s + parseFloat(r.GrandTotal || 0), 0);
   const totalDisc   = filtered.reduce((s, r) => s + parseFloat(r.Discount || 0), 0);
+  // FBR = PKR 1 per bill (as per receipt logic)
   const totalFBR    = filtered.reduce((s, r) => s + parseFloat(r.FBR || 1), 0);
 
   const reprintBill = sale => {
@@ -1751,7 +2340,7 @@ function SalesTab({ sales, setSales }) {
               <button className="btn" onClick={() => setViewBill(null)} style={{ padding: "4px 10px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 13, borderRadius: 6 }}>✕ Close</button>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
-              {[["Date", viewBill.Date],["Time", viewBill.Time],["Cashier", viewBill.Cashier],["Payment", viewBill.PaymentMethod],["Customer", viewBill.CustomerName || "Unknown"],["Cell #", viewBill.CustomerCell || "—"]].map(([l, v]) => (
+              {[["Date", viewBill.Date], ["Time", viewBill.Time], ["Cashier", viewBill.Cashier], ["Payment", viewBill.PaymentMethod], ["Customer", viewBill.CustomerName || "Unknown"], ["Cell #", viewBill.CustomerCell || "—"]].map(([l, v]) => (
                 <div key={l} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "8px 12px" }}><div style={{ color: "rgba(0,180,255,0.7)", fontSize: 10, letterSpacing: 1, marginBottom: 2 }}>{l}</div><div style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{v}</div></div>
               ))}
             </div>
@@ -1780,12 +2369,14 @@ function SalesTab({ sales, setSales }) {
           </div>
         </div>
       )}
+
+      {/* ▶ SUMMARY CARDS — now includes FBR Total */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(165px,1fr))", gap: 11, marginBottom: 16 }}>
         {[
-          { label: "Total Revenue",  value: `PKR ${fmt(totalRev)}`,  color: "#00b4ff", icon: "💰" },
-          { label: "Total Discount", value: `PKR ${fmt(totalDisc)}`, color: "#ffd700", icon: "🏷️" },
-          { label: "FBR Charges",    value: `PKR ${fmt(totalFBR)}`,  color: "#a78bfa", icon: "🧾" },
-          { label: "Total Bills",    value: filtered.length,          color: "#00e5a0", icon: "🧮" },
+          { label: "Total Revenue",  value: `PKR ${fmt(totalRev)}`,  color: "#00b4ff",  icon: "💰" },
+          { label: "Total Discount", value: `PKR ${fmt(totalDisc)}`, color: "#ffd700",  icon: "🏷️" },
+          { label: "FBR Charges",    value: `PKR ${fmt(totalFBR)}`,  color: "#a78bfa",  icon: "🧾" },
+          { label: "Total Bills",    value: filtered.length,          color: "#00e5a0",  icon: "🧮" },
         ].map((card, i) => (
           <div key={i} style={{ background: "rgba(255,255,255,0.025)", border: `1px solid ${card.color}26`, borderRadius: 11, padding: "14px 17px" }}>
             <div style={{ fontSize: 19, marginBottom: 5 }}>{card.icon}</div>
@@ -1794,11 +2385,13 @@ function SalesTab({ sales, setSales }) {
           </div>
         ))}
       </div>
+
       <div style={{ display: "flex", gap: 12, marginBottom: 13, flexWrap: "wrap", alignItems: "flex-end" }}>
         <div><label style={{ ...lbSt, marginBottom: 4 }}>Filter by Date</label><input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} style={{ ...inSt, maxWidth: 180 }} /></div>
         <div><label style={{ ...lbSt, marginBottom: 4 }}>Filter by Cashier</label><select value={filterCashier} onChange={e => setFilterCashier(e.target.value)} style={slSt}><option value="All">All Cashiers</option>{cashierList.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
         <button className="btn" onClick={() => { setFilterDate(""); setFilterCashier("All"); }} style={{ padding: "9px 14px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.45)", borderRadius: 7 }}>Clear</button>
       </div>
+
       <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
         <div style={{ display: "grid", gridTemplateColumns: "80px 95px 80px 110px 100px 80px 80px 110px 130px", padding: "8px 12px", background: "rgba(0,180,255,0.07)", color: "rgba(0,180,255,0.72)", fontSize: 10, letterSpacing: 2, fontWeight: 700 }}>
           <div>BILL#</div><div>DATE</div><div>TIME</div><div>CASHIER</div><div>CUSTOMER</div><div style={{ textAlign: "right" }}>TOTAL</div><div style={{ textAlign: "right" }}>FBR</div><div>PAYMENT</div><div>CELL</div>
@@ -1825,52 +2418,11 @@ function SalesTab({ sales, setSales }) {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// ADD CUSTOMER MODAL  ← FIXED: now a proper top-level component
-// ═══════════════════════════════════════════════════════════════════════════════
-function AddCustomerModal({ customers, setCustomers, safeCallScript, onClose }) {
-  const [name, setName] = useState("");
-  const [cell, setCell] = useState("");
-  const [msg,  setMsg]  = useState("");
 
-  const handleSave = async () => {
-    if (!name.trim()) { setMsg("Customer name is required."); return; }
-    if (cell.trim() && customers.find(c => c.CellNo && c.CellNo === cell.trim())) {
-      setMsg("A customer with this cell number already exists."); return;
-    }
-    const newCustomer = { Name: name.trim(), CellNo: cell.trim(), BillNo: "", payments: [] };
-    setCustomers(prev => [...prev, newCustomer]);
-    try { await dbPut("customers", { ...newCustomer, id: cell.trim() || name.trim() }); } catch (e) {}
-    await safeCallScript({ action: "saveCustomer", Name: newCustomer.Name, CellNo: newCustomer.CellNo, BillNo: "" });
-    setMsg("✅ Customer added successfully!");
-    setTimeout(() => onClose(), 1200);
-  };
-
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "#0c1828", border: "1px solid rgba(0,229,160,0.3)", borderRadius: 14, padding: 24, width: 380, maxWidth: "95vw" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-          <div style={{ color: "#00e5a0", fontSize: 14, fontWeight: 700 }}>➕ Add New Customer</div>
-          <button className="btn" onClick={onClose} style={{ width: 28, height: 28, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", borderRadius: 6, fontSize: 14 }}>✕</button>
-        </div>
-        <label style={{ ...lbSt, marginBottom: 5 }}>Customer Name *</label>
-        <input value={name} onChange={e => setName(e.target.value)} placeholder="Full Name" style={{ ...inSt, width: "100%", marginBottom: 13, padding: "8px 12px" }} autoFocus />
-        <label style={{ ...lbSt, marginBottom: 5 }}>Cell Number</label>
-        <input value={cell} onChange={e => setCell(e.target.value)} placeholder="0300-0000000" style={{ ...inSt, width: "100%", marginBottom: 16, padding: "8px 12px" }} onKeyDown={e => e.key === "Enter" && handleSave()} />
-        {msg && <div style={{ marginBottom: 12, padding: "8px 12px", background: msg.startsWith("✅") ? "rgba(0,229,160,0.1)" : "rgba(255,80,80,0.1)", border: `1px solid ${msg.startsWith("✅") ? "rgba(0,229,160,0.3)" : "rgba(255,80,80,0.3)"}`, borderRadius: 7, color: msg.startsWith("✅") ? "#00e5a0" : "#ff6b6b", fontSize: 12 }}>{msg}</div>}
-        <button className="btn" onClick={handleSave} style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>💾 Save Customer</button>
-      </div>
-    </div>
-  );
-}
-
-// ── CUSTOMERS TAB  ← FIXED: showAddModal state added, AddCustomerModal moved out
+// ── CUSTOMERS TAB ─────────────────────────────────────────────────────────────
 function CustomersTab({ customers, setCustomers, safeCallScript, sales }) {
-  const [filterName,     setFilterName]     = useState("");
-  const [filterCell,     setFilterCell]     = useState("");
-  const [filterBill,     setFilterBill]     = useState("");
-  const [showPayModal,   setShowPayModal]   = useState(false);
-  const [showAddModal,   setShowAddModal]   = useState(false);   // ← FIXED: was missing
+  const [filterName, setFilterName] = useState(""); const [filterCell, setFilterCell] = useState(""); const [filterBill, setFilterBill] = useState("");
+  const [showPayModal,  setShowPayModal]  = useState(false);
   const [ledgerCustomer, setLedgerCustomer] = useState(null);
 
   const filtered = customers.filter(c => {
@@ -1921,7 +2473,6 @@ function CustomersTab({ customers, setCustomers, safeCallScript, sales }) {
         <input value={filterBill} onChange={e => setFilterBill(e.target.value)} placeholder="Filter by Bill#..." style={{ ...inSt, maxWidth: 150 }} />
         <button className="btn" onClick={() => { setFilterName(""); setFilterCell(""); setFilterBill(""); }} style={{ padding: "9px 13px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.45)", borderRadius: 7 }}>Clear</button>
         <button className="btn" onClick={() => setShowPayModal(true)} style={{ padding: "9px 16px", background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>💰 Receive Payment</button>
-        <button className="btn" onClick={() => setShowAddModal(true)} style={{ padding: "9px 16px", background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>➕ Add Customer</button>
         <button className="btn" onClick={exportCSV} style={{ marginLeft: "auto", padding: "9px 16px", background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>📥 Export CSV</button>
       </div>
       <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
@@ -1933,7 +2484,7 @@ function CustomersTab({ customers, setCustomers, safeCallScript, sales }) {
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 140, color: "rgba(255,255,255,0.2)", gap: 8 }}><div style={{ fontSize: 30 }}>👥</div><div style={{ fontSize: 12 }}>No customers found</div></div>
           ) : filtered.map((c, i) => {
             const totalBills = getCustomerSales(c).reduce((s, sale) => s + parseFloat(sale.GrandTotal || 0), 0);
-            const pending    = getPending(c);
+            const pending = getPending(c);
             return (
               <div key={i} onClick={() => setLedgerCustomer(c)} style={{ display: "grid", gridTemplateColumns: "1fr 160px 1fr 110px 110px", padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.035)", alignItems: "center", cursor: "pointer" }}
                 onMouseEnter={e => e.currentTarget.style.background = "rgba(0,180,255,0.05)"}
@@ -1954,15 +2505,24 @@ function CustomersTab({ customers, setCustomers, safeCallScript, sales }) {
         </div>
       </div>
 
-      {/* ← FIXED: All modals are now siblings in JSX, not nested inside each other */}
       {showPayModal && (
-        <ReceivePaymentModal customers={customers} setCustomers={setCustomers} sales={sales} safeCallScript={safeCallScript} onClose={() => setShowPayModal(false)} />
+        <ReceivePaymentModal
+          customers={customers}
+          setCustomers={setCustomers}
+          sales={sales}
+          safeCallScript={safeCallScript}
+          onClose={() => setShowPayModal(false)}
+        />
       )}
-      {showAddModal && (
-        <AddCustomerModal customers={customers} setCustomers={setCustomers} safeCallScript={safeCallScript} onClose={() => setShowAddModal(false)} />
-      )}
+
       {ledgerCustomer && (
-        <CustomerLedgerModal customer={ledgerCustomer} customers={customers} setCustomers={setCustomers} sales={sales} onClose={() => setLedgerCustomer(null)} />
+        <CustomerLedgerModal
+          customer={ledgerCustomer}
+          customers={customers}
+          setCustomers={setCustomers}
+          sales={sales}
+          onClose={() => setLedgerCustomer(null)}
+        />
       )}
     </div>
   );
@@ -2008,20 +2568,24 @@ function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, o
   const pending = selected ? getPending(selected) : 0;
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "#0c1828", border: "1px solid rgba(0,180,255,0.3)", borderRadius: 14, padding: 24, width: 420, maxWidth: "95vw" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: "#0c1828", border: "1px solid rgba(0,180,255,0.3)", borderRadius: 14, padding: 24, width: 420, maxWidth: "95vw" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <div style={{ color: "#00b4ff", fontSize: 14, fontWeight: 700 }}>💰 Receive Payment</div>
           <button className="btn" onClick={onClose} style={{ width: 28, height: 28, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", borderRadius: 6, fontSize: 14 }}>✕</button>
         </div>
+
+        {/* Search */}
         <label style={{ ...lbSt, marginBottom: 5 }}>Search Customer (Name or Cell #)</label>
         <div style={{ position: "relative", marginBottom: 14 }}>
           <input value={query} onChange={e => { setQuery(e.target.value); setSelected(null); }} placeholder="Type name or number..." style={{ ...inSt, width: "100%", padding: "8px 12px" }} />
           {results.length > 0 && !selected && (
             <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#0c1828", border: "1px solid rgba(0,180,255,0.28)", borderRadius: 8, zIndex: 10 }}>
               {results.map((c, i) => (
-                <div key={i} onClick={() => { setSelected(c); setQuery(c.Name); setResults([]); }} style={{ padding: "8px 12px", cursor: "pointer", display: "flex", justifyContent: "space-between" }}
-                  onMouseEnter={e => e.currentTarget.style.background = "rgba(0,180,255,0.1)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                <div key={i} onClick={() => { setSelected(c); setQuery(c.Name); setResults([]); }}
+                  style={{ padding: "8px 12px", cursor: "pointer", display: "flex", justifyContent: "space-between" }}
+                  onMouseEnter={e => e.currentTarget.style.background = "rgba(0,180,255,0.1)"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                   <span style={{ color: "#fff", fontSize: 12 }}>{c.Name}</span>
                   <span style={{ color: "rgba(0,180,255,0.7)", fontSize: 11 }}>{c.CellNo}</span>
                 </div>
@@ -2029,6 +2593,7 @@ function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, o
             </div>
           )}
         </div>
+
         {selected && (
           <div style={{ background: "rgba(0,180,255,0.06)", border: "1px solid rgba(0,180,255,0.2)", borderRadius: 9, padding: "10px 14px", marginBottom: 14 }}>
             <div style={{ color: "#fff", fontWeight: 700, marginBottom: 3 }}>{selected.Name}</div>
@@ -2039,11 +2604,20 @@ function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, o
             </div>
           </div>
         )}
+
         <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-          <div style={{ flex: 1 }}><label style={{ ...lbSt, marginBottom: 5 }}>Amount (PKR)</label><input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Enter amount" style={{ ...inSt, width: "100%", padding: "8px 12px", fontSize: 15 }} /></div>
-          <div style={{ flex: 1 }}><label style={{ ...lbSt, marginBottom: 5 }}>Date</label><input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ ...inSt, width: "100%", padding: "8px 12px" }} /></div>
+          <div style={{ flex: 1 }}>
+            <label style={{ ...lbSt, marginBottom: 5 }}>Amount (PKR)</label>
+            <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Enter amount" style={{ ...inSt, width: "100%", padding: "8px 12px", fontSize: 15 }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={{ ...lbSt, marginBottom: 5 }}>Date</label>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ ...inSt, width: "100%", padding: "8px 12px" }} />
+          </div>
         </div>
+
         {msg && <div style={{ marginBottom: 12, padding: "8px 12px", background: msg.startsWith("✅") ? "rgba(0,229,160,0.1)" : "rgba(255,80,80,0.1)", border: `1px solid ${msg.startsWith("✅") ? "rgba(0,229,160,0.3)" : "rgba(255,80,80,0.3)"}`, borderRadius: 7, color: msg.startsWith("✅") ? "#00e5a0" : "#ff6b6b", fontSize: 12 }}>{msg}</div>}
+
         <button className="btn" onClick={handleSave} style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>💾 Save Payment</button>
       </div>
     </div>
@@ -2052,14 +2626,19 @@ function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, o
 
 // ─── CUSTOMER LEDGER MODAL ────────────────────────────────────────────────────
 function CustomerLedgerModal({ customer, customers, setCustomers, sales, onClose }) {
-  const billNos   = (customer.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
+  const billNos = (customer.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
   const custSales = billNos.map(bn => sales?.find(s => s.BillNo === bn)).filter(Boolean);
+
+  // Build ledger rows: bills (debit) + payments (credit)
   const debitRows  = custSales.map(s => ({ date: s.Date, type: "debit",  billNo: s.BillNo, desc: `Bill #${s.BillNo}`, debit: parseFloat(s.GrandTotal || 0), credit: 0 }));
-  const creditRows = (customer.payments || []).map((p) => ({ date: p.date, type: "credit", billNo: null, desc: "Payment Received", debit: 0, credit: parseFloat(p.amount || 0) }));
+  const creditRows = (customer.payments || []).map((p, i) => ({ date: p.date, type: "credit", billNo: null, desc: `Payment Received`, debit: 0, credit: parseFloat(p.amount || 0) }));
   const allRows = [...debitRows, ...creditRows].sort((a, b) => {
+    // parse dd/mm/yyyy or yyyy-mm-dd
     const parse = d => { if (!d) return 0; if (d.includes("/")) { const [dd, mm, yy] = d.split("/"); return new Date(`${yy}-${mm}-${dd}`).getTime(); } return new Date(d).getTime(); };
     return parse(a.date) - parse(b.date);
   });
+
+  // running balance
   let running = 0;
   const rows = allRows.map(r => { running += r.debit - r.credit; return { ...r, balance: running }; });
   const totalBills = debitRows.reduce((s, r) => s + r.debit, 0);
@@ -2069,21 +2648,56 @@ function CustomerLedgerModal({ customer, customers, setCustomers, sales, onClose
   const downloadPDF = () => {
     let tableRows = "";
     rows.forEach(r => {
-      tableRows += `<tr><td>${r.date || "—"}</td><td>${r.desc}${r.billNo ? ` (#${r.billNo})` : ""}</td><td style="color:${r.debit > 0 ? "#c00" : "#aaa"};text-align:right">${r.debit > 0 ? `PKR ${r.debit.toLocaleString()}` : "—"}</td><td style="color:${r.credit > 0 ? "#007700" : "#aaa"};text-align:right">${r.credit > 0 ? `PKR ${r.credit.toLocaleString()}` : "—"}</td><td style="font-weight:bold;text-align:right;color:${r.balance > 0 ? "#c00" : "#007700"}">${r.balance > 0 ? `PKR ${r.balance.toLocaleString()}` : "NIL"}</td></tr>`;
+      tableRows += `<tr>
+        <td>${r.date || "—"}</td>
+        <td>${r.desc}${r.billNo ? ` (#${r.billNo})` : ""}</td>
+        <td style="color:${r.debit > 0 ? "#c00" : "#aaa"};text-align:right">${r.debit > 0 ? `PKR ${r.debit.toLocaleString()}` : "—"}</td>
+        <td style="color:${r.credit > 0 ? "#007700" : "#aaa"};text-align:right">${r.credit > 0 ? `PKR ${r.credit.toLocaleString()}` : "—"}</td>
+        <td style="font-weight:bold;text-align:right;color:${r.balance > 0 ? "#c00" : "#007700"}">${r.balance > 0 ? `PKR ${r.balance.toLocaleString()}` : "NIL"}</td>
+      </tr>`;
     });
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;color:#000;background:#fff;padding:30px}h1{font-size:20px;text-align:center;margin-bottom:4px}.sub{text-align:center;color:#555;font-size:12px;margin-bottom:20px}.info-box{display:flex;gap:30px;margin-bottom:20px;padding:12px 16px;border:1px solid #ddd;border-radius:6px;background:#f9f9f9}.info-item{display:flex;flex-direction:column;gap:2px}.info-label{color:#777;font-size:10px;text-transform:uppercase;letter-spacing:1px}.info-val{font-weight:bold;font-size:14px}table{width:100%;border-collapse:collapse;margin-bottom:20px}th{background:#0c1828;color:#fff;padding:8px 10px;text-align:left;font-size:11px;letter-spacing:1px}td{padding:7px 10px;border-bottom:1px solid #eee;font-size:12px}tr:nth-child(even){background:#f7f7f7}.footer{text-align:center;color:#aaa;font-size:10px;margin-top:10px}@media print{body{padding:10px}}</style></head><body>
-    <h1>MART — BAKERY & STORES</h1><div class="sub">Customer Account Statement</div>
-    <div class="info-box"><div class="info-item"><span class="info-label">Customer Name</span><span class="info-val">${customer.Name}</span></div><div class="info-item"><span class="info-label">Cell Number</span><span class="info-val">${customer.CellNo || "—"}</span></div><div class="info-item"><span class="info-label">Total Billed</span><span class="info-val" style="color:#c00">PKR ${totalBills.toLocaleString()}</span></div><div class="info-item"><span class="info-label">Total Paid</span><span class="info-val" style="color:#007700">PKR ${totalPaid.toLocaleString()}</span></div><div class="info-item"><span class="info-label">Balance Due</span><span class="info-val" style="color:${pending > 0 ? "#c00" : "#007700"}">${pending > 0 ? `PKR ${pending.toLocaleString()}` : "CLEAR"}</span></div></div>
-    <table><thead><tr><th>Date</th><th>Description</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th><th style="text-align:right">Balance</th></tr></thead><tbody>${tableRows}</tbody></table>
-    <div class="footer">Generated by itKINS POS System · itkins.com · 0304-7414437</div><br/></body></html>`;
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <style>
+      *{margin:0;padding:0;box-sizing:border-box}
+      body{font-family:Arial,sans-serif;font-size:12px;color:#000;background:#fff;padding:30px}
+      h1{font-size:20px;text-align:center;margin-bottom:4px}
+      .sub{text-align:center;color:#555;font-size:12px;margin-bottom:20px}
+      .info-box{display:flex;gap:30px;margin-bottom:20px;padding:12px 16px;border:1px solid #ddd;border-radius:6px;background:#f9f9f9}
+      .info-item{display:flex;flex-direction:column;gap:2px}
+      .info-label{color:#777;font-size:10px;text-transform:uppercase;letter-spacing:1px}
+      .info-val{font-weight:bold;font-size:14px}
+      table{width:100%;border-collapse:collapse;margin-bottom:20px}
+      th{background:#0c1828;color:#fff;padding:8px 10px;text-align:left;font-size:11px;letter-spacing:1px}
+      td{padding:7px 10px;border-bottom:1px solid #eee;font-size:12px}
+      tr:nth-child(even){background:#f7f7f7}
+      .footer{text-align:center;color:#aaa;font-size:10px;margin-top:10px}
+      @media print{body{padding:10px}}
+    </style></head><body>
+    <h1>MART — BAKERY & STORES</h1>
+    <div class="sub">Customer Account Statement</div>
+    <div class="info-box">
+      <div class="info-item"><span class="info-label">Customer Name</span><span class="info-val">${customer.Name}</span></div>
+      <div class="info-item"><span class="info-label">Cell Number</span><span class="info-val">${customer.CellNo || "—"}</span></div>
+      <div class="info-item"><span class="info-label">Total Billed</span><span class="info-val" style="color:#c00">PKR ${totalBills.toLocaleString()}</span></div>
+      <div class="info-item"><span class="info-label">Total Paid</span><span class="info-val" style="color:#007700">PKR ${totalPaid.toLocaleString()}</span></div>
+      <div class="info-item"><span class="info-label">Balance Due</span><span class="info-val" style="color:${pending > 0 ? "#c00" : "#007700"}">${pending > 0 ? `PKR ${pending.toLocaleString()}` : "CLEAR"}</span></div>
+    </div>
+    <table>
+      <thead><tr><th>Date</th><th>Description</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th><th style="text-align:right">Balance</th></tr></thead>
+      <tbody>${tableRows}</tbody>
+    </table>
+    <div class="footer">Generated by itKINS POS System · itkins.com · 0304-7414437</div>
+    <br/></body></html>`;
     const w = window.open("", "_blank", "width=900,height=700");
     if (!w) { alert("Allow popups!"); return; }
     w.document.write(html); w.document.close(); setTimeout(() => { w.focus(); w.print(); }, 450);
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "#0a0e1a", border: "1px solid rgba(0,180,255,0.3)", borderRadius: 14, padding: 24, width: 720, maxWidth: "96vw", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: "#0a0e1a", border: "1px solid rgba(0,180,255,0.3)", borderRadius: 14, padding: 24, width: 720, maxWidth: "96vw", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+        {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
           <div>
             <div style={{ color: "#00b4ff", fontSize: 16, fontWeight: 800 }}>{customer.Name}</div>
@@ -2094,14 +2708,22 @@ function CustomerLedgerModal({ customer, customers, setCustomers, sales, onClose
             <button className="btn" onClick={onClose} style={{ width: 30, height: 30, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", borderRadius: 6, fontSize: 14 }}>✕</button>
           </div>
         </div>
+
+        {/* Summary row */}
         <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-          {[{ label: "Total Billed", val: `PKR ${fmt(totalBills)}`, color: "#ff6b6b" }, { label: "Total Paid", val: `PKR ${fmt(totalPaid)}`, color: "#00e5a0" }, { label: "Balance Due", val: pending > 0 ? `PKR ${fmt(pending)}` : "✓ CLEAR", color: pending > 0 ? "#ff6b6b" : "#00e5a0" }].map((s, i) => (
+          {[
+            { label: "Total Billed",  val: `PKR ${fmt(totalBills)}`, color: "#ff6b6b" },
+            { label: "Total Paid",    val: `PKR ${fmt(totalPaid)}`,  color: "#00e5a0" },
+            { label: "Balance Due",   val: pending > 0 ? `PKR ${fmt(pending)}` : "✓ CLEAR", color: pending > 0 ? "#ff6b6b" : "#00e5a0" },
+          ].map((s, i) => (
             <div key={i} style={{ flex: 1, minWidth: 140, padding: "9px 14px", background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 9 }}>
               <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 10 }}>{s.label}</div>
               <div style={{ color: s.color, fontWeight: 800, fontSize: 15 }}>{s.val}</div>
             </div>
           ))}
         </div>
+
+        {/* Ledger table */}
         <div style={{ flex: 1, overflowY: "auto", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 130px 130px 130px", padding: "8px 14px", background: "rgba(0,180,255,0.07)", color: "rgba(0,180,255,0.72)", fontSize: 10, letterSpacing: 2, fontWeight: 700, position: "sticky", top: 0 }}>
             <div>DATE</div><div>DESCRIPTION</div><div style={{ textAlign: "right" }}>DEBIT (Dr)</div><div style={{ textAlign: "right" }}>CREDIT (Cr)</div><div style={{ textAlign: "right" }}>BALANCE</div>
@@ -2137,17 +2759,17 @@ function StockTab({ items, setItems, safeCallScript }) {
   const categories = [...new Set(items.map(i => i.Category || "").filter(Boolean))].sort();
   const companies  = [...new Set(items.map(i => i.Company || "").filter(Boolean))].sort();
   const filtered = items.filter(i => {
-    const stk = Number(i.Stock) || 0;
-    const es  = getExpiryStatus(i.ExpiryDate);
-    if (filterCat    !== "All" && i.Category !== filterCat)   return false;
-    if (filterCo     !== "All" && i.Company  !== filterCo)    return false;
-    if (filterStatus === "out"      && stk > 0)               return false;
-    if (filterStatus === "low"      && (stk <= 0 || stk > 5)) return false;
-    if (filterStatus === "ok"       && stk <= 5)              return false;
-    if (filterStatus === "expired"  && es.status !== "expired") return false;
-    if (filterStatus === "expiring" && !["critical","today","warning"].includes(es.status)) return false;
-    return true;
-  }).sort((a, b) => (Number(a.Stock) || 0) - (Number(b.Stock) || 0));
+  const stk = Number(i.Stock) || 0;
+  const es  = getExpiryStatus(i.ExpiryDate);
+  if (filterCat    !== "All" && i.Category !== filterCat)            return false;
+  if (filterCo     !== "All" && i.Company  !== filterCo)             return false;
+  if (filterStatus === "out"      && stk > 0)                        return false;
+  if (filterStatus === "low"      && (stk <= 0 || stk > 5))          return false;
+  if (filterStatus === "ok"       && stk <= 5)                       return false;
+  if (filterStatus === "expired"  && es.status !== "expired")        return false;
+  if (filterStatus === "expiring" && !["critical","today","warning"].includes(es.status)) return false;
+  return true;
+}).sort((a, b) => (Number(a.Stock) || 0) - (Number(b.Stock) || 0));
 
   const doAdjust = async bc => {
     const n = parseInt(adjVal); if (isNaN(n) || n < 0) return;
@@ -2167,12 +2789,13 @@ function StockTab({ items, setItems, safeCallScript }) {
 
   return (
     <div>
+      {/* Stock summary cards */}
       <div style={{ display: "flex", gap: 11, marginBottom: 15, flexWrap: "wrap" }}>
         {[
-          { label: "Out of Stock",   color: "#ff6b6b", cnt: items.filter(i => (Number(i.Stock) || 0) <= 0).length },
+          { label: "Out of Stock", color: "#ff6b6b", cnt: items.filter(i => (Number(i.Stock) || 0) <= 0).length },
           { label: "Low Stock (≤5)", color: "#ffd700", cnt: items.filter(i => (Number(i.Stock) || 0) > 0 && (Number(i.Stock) || 0) <= 5).length },
-          { label: "In Stock",       color: "#00e5a0", cnt: items.filter(i => (Number(i.Stock) || 0) > 5).length },
-          { label: "Stock Value",    color: "#a78bfa", cnt: `PKR ${fmt(items.reduce((s, i) => s + parseFloat(i.Price || 0) * (Number(i.Stock) || 0), 0))}` },
+          { label: "In Stock",    color: "#00e5a0", cnt: items.filter(i => (Number(i.Stock) || 0) > 5).length },
+          { label: "Stock Value", color: "#a78bfa", cnt: `PKR ${fmt(items.reduce((s, i) => s + parseFloat(i.Price || 0) * (Number(i.Stock) || 0), 0))}` },
         ].map((s, i) => (
           <div key={i} style={{ padding: "11px 17px", background: "rgba(255,255,255,0.025)", border: `1px solid ${s.color}26`, borderRadius: 10 }}>
             <div style={{ color: s.color, fontSize: 21, fontWeight: 800 }}>{s.cnt}</div>
@@ -2181,65 +2804,351 @@ function StockTab({ items, setItems, safeCallScript }) {
         ))}
       </div>
 
-      {/* Expiry Alerts */}
-      {(() => {
-        const expiredItems  = items.filter(i => getExpiryStatus(i.ExpiryDate).status === "expired");
-        const criticalItems = items.filter(i => ["critical","today"].includes(getExpiryStatus(i.ExpiryDate).status));
-        const warningItems  = items.filter(i => getExpiryStatus(i.ExpiryDate).status === "warning");
-        if (!expiredItems.length && !criticalItems.length && !warningItems.length) return null;
-        return (
-          <div style={{ marginBottom: 14, display: "flex", flexDirection: "column", gap: 7 }}>
-            {expiredItems.length > 0 && (
-              <div style={{ padding: "10px 16px", background: "rgba(255,40,40,0.1)", border: "1px solid rgba(255,40,40,0.4)", borderRadius: 9, display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 18 }}>⛔</span>
-                <div><div style={{ color: "#ff4444", fontWeight: 700, fontSize: 12 }}>{expiredItems.length} EXPIRED item(s)</div><div style={{ color: "rgba(255,100,100,0.8)", fontSize: 11 }}>{expiredItems.map(i => i.ItemName).join(", ")}</div></div>
-              </div>
-            )}
-            {criticalItems.length > 0 && (
-              <div style={{ padding: "10px 16px", background: "rgba(255,107,0,0.1)", border: "1px solid rgba(255,107,0,0.4)", borderRadius: 9, display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 18 }}>⚠️</span>
-                <div><div style={{ color: "#ff6b00", fontWeight: 700, fontSize: 12 }}>{criticalItems.length} item(s) expiring within 7 days</div><div style={{ color: "rgba(255,150,0,0.8)", fontSize: 11 }}>{criticalItems.map(i => `${i.ItemName} (${getExpiryStatus(i.ExpiryDate).label})`).join(", ")}</div></div>
-              </div>
-            )}
-            {warningItems.length > 0 && (
-              <div style={{ padding: "10px 16px", background: "rgba(255,200,0,0.08)", border: "1px solid rgba(255,200,0,0.3)", borderRadius: 9, display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 18 }}>🕐</span>
-                <div><div style={{ color: "#ffd700", fontWeight: 700, fontSize: 12 }}>{warningItems.length} item(s) expiring within 30 days</div><div style={{ color: "rgba(255,220,0,0.7)", fontSize: 11 }}>{warningItems.map(i => `${i.ItemName} (${getExpiryStatus(i.ExpiryDate).label})`).join(", ")}</div></div>
-              </div>
-            )}
+{/* ── Expiry Alert Banner ── */}
+{(() => {
+  const expiredItems  = items.filter(i => getExpiryStatus(i.ExpiryDate).status === "expired");
+  const criticalItems = items.filter(i => ["critical","today"].includes(getExpiryStatus(i.ExpiryDate).status));
+  const warningItems  = items.filter(i => getExpiryStatus(i.ExpiryDate).status === "warning");
+  if (!expiredItems.length && !criticalItems.length && !warningItems.length) return null;
+  return (
+    <div style={{ marginBottom: 14, display: "flex", flexDirection: "column", gap: 7 }}>
+      {expiredItems.length > 0 && (
+        <div style={{ padding: "10px 16px", background: "rgba(255,40,40,0.1)", border: "1px solid rgba(255,40,40,0.4)", borderRadius: 9, display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 18 }}>⛔</span>
+          <div>
+            <div style={{ color: "#ff4444", fontWeight: 700, fontSize: 12 }}>{expiredItems.length} EXPIRED item(s)</div>
+            <div style={{ color: "rgba(255,100,100,0.8)", fontSize: 11 }}>{expiredItems.map(i => i.ItemName).join(", ")}</div>
           </div>
-        );
-      })()}
-
+        </div>
+      )}
+      {criticalItems.length > 0 && (
+        <div style={{ padding: "10px 16px", background: "rgba(255,107,0,0.1)", border: "1px solid rgba(255,107,0,0.4)", borderRadius: 9, display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 18 }}>⚠️</span>
+          <div>
+            <div style={{ color: "#ff6b00", fontWeight: 700, fontSize: 12 }}>{criticalItems.length} item(s) expiring within 7 days</div>
+            <div style={{ color: "rgba(255,150,0,0.8)", fontSize: 11 }}>{criticalItems.map(i => `${i.ItemName} (${getExpiryStatus(i.ExpiryDate).label})`).join(", ")}</div>
+          </div>
+        </div>
+      )}
+      {warningItems.length > 0 && (
+        <div style={{ padding: "10px 16px", background: "rgba(255,200,0,0.08)", border: "1px solid rgba(255,200,0,0.3)", borderRadius: 9, display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 18 }}>🕐</span>
+          <div>
+            <div style={{ color: "#ffd700", fontWeight: 700, fontSize: 12 }}>{warningItems.length} item(s) expiring within 30 days</div>
+            <div style={{ color: "rgba(255,220,0,0.7)", fontSize: 11 }}>{warningItems.map(i => `${i.ItemName} (${getExpiryStatus(i.ExpiryDate).label})`).join(", ")}</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+})()}
+        
+      {/* Filters row + PDF download button */}
       <div style={{ display: "flex", gap: 9, marginBottom: 13, flexWrap: "wrap", alignItems: "center" }}>
         <select value={filterCat}    onChange={e => setFilterCat(e.target.value)}    style={slSt}><option value="All">All Categories</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
         <select value={filterCo}     onChange={e => setFilterCo(e.target.value)}     style={slSt}><option value="All">All Companies</option>{companies.map(c => <option key={c} value={c}>{c}</option>)}</select>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={slSt}>
-          <option value="All">All Status</option><option value="out">❌ Out of Stock</option><option value="low">⚠️ Low Stock</option><option value="ok">✅ In Stock</option><option value="expired">⛔ Expired</option><option value="expiring">🕐 Expiring Soon</option>
-        </select>
+      <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={slSt}>
+  <option value="All">All Status</option>
+  <option value="out">❌ Out of Stock</option>
+  <option value="low">⚠️ Low Stock</option>
+  <option value="ok">✅ In Stock</option>
+  <option value="expired">⛔ Expired</option>
+  <option value="expiring">🕐 Expiring Soon</option>
+</select>
         <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 11 }}>{filtered.length} items</span>
-        <button className="btn" onClick={handleDownloadPDF} disabled={pdfLoading || filtered.length === 0} style={{ marginLeft: "auto", padding: "9px 18px", background: pdfLoading ? "rgba(255,200,0,0.1)" : "linear-gradient(135deg,#b45309,#fbbf24)", border: "none", color: pdfLoading ? "#fbbf24" : "#000", fontSize: 12, fontWeight: 700, borderRadius: 7, display: "flex", alignItems: "center", gap: 6 }}>
-          {pdfLoading ? <><span style={{ display: "inline-block", width: 12, height: 12, border: "2px solid #fbbf24", borderTop: "2px solid transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Generating...</> : <>📄 Download PDF ({filtered.length} items)</>}
+        {/* ▶ NEW: Download PDF button */}
+        <button
+          className="btn"
+          onClick={handleDownloadPDF}
+          disabled={pdfLoading || filtered.length === 0}
+          style={{
+            marginLeft: "auto",
+            padding: "9px 18px",
+            background: pdfLoading ? "rgba(255,200,0,0.1)" : "linear-gradient(135deg,#b45309,#fbbf24)",
+            border: "none",
+            color: pdfLoading ? "#fbbf24" : "#000",
+            fontSize: 12,
+            fontWeight: 700,
+            borderRadius: 7,
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          {pdfLoading
+            ? <><span style={{ display: "inline-block", width: 12, height: 12, border: "2px solid #fbbf24", borderTop: "2px solid transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Generating...</>
+            : <>📄 Download PDF ({filtered.length} items)</>
+          }
         </button>
       </div>
 
+      {/* Stock table */}
       <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
         <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 110px 110px 85px 95px 105px 130px", padding: "8px 12px", background: "rgba(0,180,255,0.07)", color: "rgba(0,180,255,0.72)", fontSize: 10, letterSpacing: 2, fontWeight: 700 }}>
-          <div>BARCODE</div><div>ITEM</div><div>COMPANY</div><div>CATEGORY</div><div style={{ textAlign: "right" }}>PRICE</div><div style={{ textAlign: "right" }}>STOCK</div><div style={{ textAlign: "center" }}>EXPIRY</div><div style={{ textAlign: "center" }}>ADJUST</div>
+  <div>BARCODE</div><div>ITEM</div><div>COMPANY</div><div>CATEGORY</div><div style={{ textAlign: "right" }}>PRICE</div><div style={{ textAlign: "right" }}>STOCK</div><div style={{ textAlign: "center" }}>EXPIRY</div><div style={{ textAlign: "center" }}>ADJUST</div>
+</div>
+        {filtered.map((item, i) => { const stk = Number(item.Stock) || 0; const sc = stk <= 0 ? "#ff6b6b" : stk <= 5 ? "#ffd700" : "#00e5a0"; return (
+          <div key={i} style={{ display: "grid", gridTemplateColumns: "110px 1fr 110px 110px 85px 95px 105px 130px", padding: "8px 12px", borderBottom: "1px solid rgba(255,255,255,0.03)", alignItems: "center", background: stk <= 0 ? "rgba(255,50,50,0.03)" : stk <= 5 ? "rgba(255,200,0,0.03)" : "transparent" }}>
+  <div style={{ color: "rgba(255,255,255,0.33)", fontSize: 11 }}>{item.Barcode}</div>
+  <div style={{ color: "#fff", fontSize: 12 }}>{item.ItemName}</div>
+  <div style={{ color: "rgba(0,180,255,0.7)", fontSize: 11 }}>{item.Company || "—"}</div>
+  <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>{item.Category}</div>
+  <div style={{ color: "#00b4ff", textAlign: "right", fontSize: 12, fontWeight: 700 }}>{fmt(item.Price)}</div>
+  <div style={{ textAlign: "right" }}><span style={{ color: sc, fontWeight: 700, fontSize: 14 }}>{item.Stock}</span>{stk <= 0 && <span style={{ marginLeft: 4, fontSize: 10, color: "#ff6b6b" }}>OUT</span>}{stk > 0 && stk <= 5 && <span style={{ marginLeft: 4, fontSize: 10, color: "#ffd700" }}>LOW</span>}</div>
+  {(() => { const es = getExpiryStatus(item.ExpiryDate); return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ color: es.color, fontSize: 10, fontWeight: 700 }}>{fmtExpiry(item.ExpiryDate)}</div>
+      {item.ExpiryDate && <div style={{ fontSize: 9, color: es.color, opacity: 0.85 }}>{es.label}</div>}
+    </div>
+  ); })()}
+  <div style={{ display: "flex", justifyContent: "center", gap: 5 }}>
+    {adjusting === item.Barcode ? (
+      <><input type="number" value={adjVal} onChange={e => setAdjVal(e.target.value)} style={{ ...inSt, width: 68, padding: "5px 7px", textAlign: "center" }} autoFocus onKeyDown={e => e.key === "Enter" && doAdjust(item.Barcode)} />
+        <button className="btn" onClick={() => doAdjust(item.Barcode)} style={{ padding: "5px 8px", background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 11, borderRadius: 5 }}>✓</button>
+        <button className="btn" onClick={() => setAdjusting(null)} style={{ padding: "5px 7px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.38)", fontSize: 11, borderRadius: 5 }}>✕</button></>
+    ) : (
+      <button className="btn" onClick={() => { setAdjusting(item.Barcode); setAdjVal(item.Stock); }} style={{ padding: "5px 11px", background: "rgba(0,180,255,0.09)", border: "1px solid rgba(0,180,255,0.2)", color: "#00b4ff", fontSize: 11, borderRadius: 5 }}>Set</button>
+    )}
+  </div>
+</div>
+        ); })}
+      </div>
+    </div>
+  );
+}
+
+
+// ── SETUP TAB ─────────────────────────────────────────────────────────────────
+function SetupTab({ sheetStatus, onRefresh, lastSync, safeCallScript }) {
+  const [testResults, setTestResults] = useState(null); const [testing, setTesting] = useState(false); const [repairing, setRepairing] = useState(false); const [repairMsg, setRepairMsg] = useState("");
+  const [dbInfo, setDbInfo] = useState(null);
+  const runTest   = async () => { setTesting(true); setTestResults(null); setRepairMsg(""); const r = await deepTestConnections(); setTestResults(r); setTesting(false); };
+  const doRepair  = async () => { setRepairing(true); setRepairMsg("Sending repair request..."); await autoRepairSheets(); setRepairMsg("✅ Sent! Waiting 3s..."); await new Promise(r => setTimeout(r, 3000)); const r = await deepTestConnections(); setTestResults(r); setRepairing(false); const allOk = Object.values(r).every(v => v.ok); setRepairMsg(allOk ? "✅ All fixed!" : "⚠ Some issues remain."); };
+  const downloadScript = () => { const txt = getScriptText(); const blob = new Blob([txt], { type: "text/plain;charset=utf-8" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "POS_Script_v6.gs"; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); };
+  const checkDB   = async () => { try { const items = await dbGetAll("items"); const sales = await dbGetAll("sales"); const queue = await dbGetAll("pendingQueue"); const lastSync = await dbGetMeta("lastSync"); setDbInfo({ items: items.length, sales: sales.length, queue: queue.length, lastSync }); } catch (e) { setDbInfo({ error: e.message }); } };
+  const clearDB   = async () => { if (!window.confirm("Clear all local offline data? (Google Sheets data stays safe)")) return; const stores = ["items", "categories", "cashiers", "sales", "customers", "returns", "stocklog", "meta"]; for (const s of stores) await dbClear(s); setDbInfo(null); alert("Local cache cleared. Refresh to reload from Google Sheets."); };
+  const allOk = testResults && Object.values(testResults).every(v => v.ok);
+  const SHEET_LABELS = { items: { label: "📦 Items", tabName: "Items" }, categories: { label: "🏷 Categories", tabName: "Categories" }, cashiers: { label: "👤 Cashier", tabName: "Cashier" }, sales: { label: "💰 Sales", tabName: "Sales" }, stocklog: { label: "📉 StockLog", tabName: "StockLog" }, customers: { label: "🧑 Customer", tabName: "Customer" }, returns: { label: "↩ Returns", tabName: "Returns" }, script: { label: "⚡ Apps Script", tabName: null } };
+  return (
+    <div style={{ maxWidth: 720 }}>
+      <div style={{ background: "rgba(0,180,255,0.04)", border: "1px solid rgba(0,180,255,0.2)", borderRadius: 12, padding: 18, marginBottom: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div><div style={{ color: "#00b4ff", fontWeight: 700, fontSize: 13 }}>💾 OFFLINE DATABASE (IndexedDB)</div><div style={{ color: "rgba(255,255,255,0.3)", fontSize: 11, marginTop: 3 }}>Local cache for offline & fast load</div></div>
+          <div style={{ display: "flex", gap: 7 }}>
+            <button className="btn" onClick={checkDB} style={{ padding: "7px 14px", background: "rgba(0,180,255,0.1)", border: "1px solid rgba(0,180,255,0.25)", color: "#00b4ff", fontSize: 11, borderRadius: 6 }}>Check DB</button>
+            <button className="btn" onClick={clearDB} style={{ padding: "7px 14px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.25)", color: "#ff6b6b", fontSize: 11, borderRadius: 6 }}>Clear Cache</button>
+          </div>
         </div>
-        {filtered.map((item, i) => {
-          const stk = Number(item.Stock) || 0; const sc = stk <= 0 ? "#ff6b6b" : stk <= 5 ? "#ffd700" : "#00e5a0";
-          return (
-            <div key={i} style={{ display: "grid", gridTemplateColumns: "110px 1fr 110px 110px 85px 95px 105px 130px", padding: "8px 12px", borderBottom: "1px solid rgba(255,255,255,0.03)", alignItems: "center", background: stk <= 0 ? "rgba(255,50,50,0.03)" : stk <= 5 ? "rgba(255,200,0,0.03)" : "transparent" }}>
-              <div style={{ color: "rgba(255,255,255,0.33)", fontSize: 11 }}>{item.Barcode}</div>
-              <div style={{ color: "#fff", fontSize: 12 }}>{item.ItemName}</div>
-              <div style={{ color: "rgba(0,180,255,0.7)", fontSize: 11 }}>{item.Company || "—"}</div>
-              <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>{item.Category}</div>
-              <div style={{ color: "#00b4ff", textAlign: "right", fontSize: 12, fontWeight: 700 }}>{fmt(item.Price)}</div>
-              <div style={{ textAlign: "right" }}><span style={{ color: sc, fontWeight: 700, fontSize: 14 }}>{item.Stock}</span>{stk <= 0 && <span style={{ marginLeft: 4, fontSize: 10, color: "#ff6b6b" }}>OUT</span>}{stk > 0 && stk <= 5 && <span style={{ marginLeft: 4, fontSize: 10, color: "#ffd700" }}>LOW</span>}</div>
-              {(() => { const es = getExpiryStatus(item.ExpiryDate); return (<div style={{ textAlign: "center" }}><div style={{ color: es.color, fontSize: 10, fontWeight: 700 }}>{fmtExpiry(item.ExpiryDate)}</div>{item.ExpiryDate && <div style={{ fontSize: 9, color: es.color, opacity: 0.85 }}>{es.label}</div>}</div>); })()}
-              <div style={{ display: "flex", justifyContent: "center", gap: 5 }}>
-                {adjusting === item.Barcode ? (
-                  <><input type="number" value={adjVal} onChange={e => setAdjVal(e.target.value)} style={{ ...inSt, width: 68, padding: "5px 7px", textAlign: "center" }} autoFocus onKeyDown={e => e.key === "Enter" && doAdjust(item.Barcode)} />
-                    <button className="btn" onClick={() => doAdjust(item.Barcode)} style={{ padding: "5px 8px", background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 11, borderRadius: 5 }}>✓</button>
-                    <button className="btn" onClick={() => setAdjusting(null)} style={{ padding: "5px 7px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color:
+        {dbInfo && (
+          dbInfo.error ? <div style={{ color: "#ff6b6b", fontSize: 12 }}>Error: {dbInfo.error}</div> :
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 9 }}>
+            {[["Items", dbInfo.items], ["Sales", dbInfo.sales], ["Pending Queue", dbInfo.queue], ["Last Sync", dbInfo.lastSync ? new Date(dbInfo.lastSync).toLocaleTimeString("en-PK") : "Never"]].map(([l, v]) => (
+              <div key={l} style={{ background: "rgba(255,255,255,0.025)", borderRadius: 8, padding: "9px 12px" }}><div style={{ color: "rgba(0,180,255,0.7)", fontSize: 10 }}>{l}</div><div style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>{v}</div></div>
+            ))}
+          </div>
+        )}
+        {!dbInfo && <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 12 }}>Click "Check DB" to see local cache status.</div>}
+        <div style={{ marginTop: 10, color: "rgba(255,255,255,0.3)", fontSize: 11, lineHeight: 1.7 }}>
+          Data loads from local cache instantly on startup. Database syncs in background. Offline sales are queued and sent automatically when internet returns.
+          <br />⚠ IndexedDB is per-browser/PC. Multiple PCs sync via Database.
+        </div>
+      </div>
+
+      <div style={{ background: "rgba(0,180,255,0.04)", border: "1px solid rgba(0,180,255,0.2)", borderRadius: 12, padding: 20, marginBottom: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <div><div style={{ color: "#00b4ff", fontWeight: 700, fontSize: 13 }}>🔌 CONNECTION & HEADERS TEST</div></div>
+          <button className="btn" onClick={runTest} disabled={testing || repairing} style={{ padding: "8px 18px", background: testing ? "rgba(0,180,255,0.1)" : "linear-gradient(135deg,#0062ff,#00b4ff)", border: "none", color: "#fff", fontSize: 12, borderRadius: 7, fontWeight: 700 }}>{testing ? "⏳ Testing..." : "▶ Run Test"}</button>
+        </div>
+        {testResults && (
+          <>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+              {Object.entries(SHEET_LABELS).map(([key, { label, tabName }]) => {
+                const r = testResults[key] || { ok: false, reachable: false, missingHeaders: [], extraInfo: "" };
+                return (
+                  <div key={key} style={{ padding: "12px 16px", background: "rgba(255,255,255,0.025)", border: `1px solid ${r.ok ? "rgba(0,200,0,0.3)" : r.reachable ? "rgba(255,200,0,0.3)" : "rgba(255,80,80,0.3)"}`, borderRadius: 9 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div style={{ fontSize: 22 }}>{r.ok ? "✅" : r.reachable ? "⚠️" : "❌"}</div>
+                        <div>
+                          <div style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{label}</div>
+                          <div style={{ color: r.ok ? "#00e080" : r.reachable ? "#ffd700" : "#ff6b6b", fontSize: 11 }}>{r.ok ? r.extraInfo : r.extraInfo || "Not reachable"}</div>
+                        </div>
+                      </div>
+                      {tabName && <div style={{ fontSize: 11, color: "rgba(255,255,255,0.28)" }}>Tab: <code style={{ color: "rgba(255,255,255,0.6)", background: "rgba(255,255,255,0.06)", padding: "1px 6px", borderRadius: 4 }}>{tabName}</code></div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {!allOk && (
+              <div style={{ display: "flex", gap: 9 }}>
+                <button className="btn" onClick={doRepair} disabled={repairing} style={{ padding: "9px 18px", background: "linear-gradient(135deg,#00a651,#00e5a0)", border: "none", color: "#000", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>{repairing ? "⏳ Repairing..." : "🔧 Auto-Repair"}</button>
+                <button className="btn" onClick={downloadScript} style={{ padding: "9px 18px", background: "rgba(255,200,0,0.1)", border: "1px solid rgba(255,200,0,0.3)", color: "#ffd700", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>📥 Download Script v5</button>
+              </div>
+            )}
+            {repairMsg && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(0,180,255,0.07)", border: "1px solid rgba(0,180,255,0.2)", color: "rgba(255,255,255,0.8)", fontSize: 12 }}>{repairMsg}</div>}
+          </>
+        )}
+        {!testResults && !testing && <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 12 }}>Click ▶ Run Test to check all connections.</div>}
+      </div>
+
+      <div style={{ background: "rgba(255,200,0,0.04)", border: "1px solid rgba(255,200,0,0.2)", borderRadius: 12, padding: 18, marginBottom: 18 }}>
+        <div style={{ color: "#ffd700", fontWeight: 700, fontSize: 12, marginBottom: 10 }}>📥 APPS SCRIPT - Delete your database</div>
+        <button className="btn" onClick={downloadScript} style={{ padding: "10px 22px", background: "linear-gradient(135deg,#ffd700,#ff8c00)", color: "#000", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>📥 Download Script v5 (.gs)</button>
+      </div>
+
+      <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: 18, marginBottom: 18 }}>
+        <div style={{ color: "#ffd700", fontWeight: 700, fontSize: 12, marginBottom: 10 }}>🔄 SYNC STATUS</div>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>Sheet: <span style={{ color: sheetStatus === "loaded" ? "#00e080" : sheetStatus === "error" ? "#ff6b6b" : "#ffd700", fontWeight: 700 }}>{sheetStatus === "loaded" ? "✓ LIVE" : sheetStatus === "cached" ? "💾 CACHED" : sheetStatus === "error" ? "✗ ERROR" : "◉ DEMO"}</span></div>
+          {lastSync && <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 12 }}>Last: {lastSync.toLocaleString("en-PK")}</div>}
+          <button className="btn" onClick={onRefresh} style={{ padding: "7px 16px", background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 12, borderRadius: 7, fontWeight: 700 }}>🔄 Sync Now</button>
+        </div>
+      </div>
+
+      <div style={{ background: "rgba(255,200,0,0.04)", border: "1px solid rgba(255,200,0,0.22)", borderRadius: 12, padding: 20 }}>
+        <div style={{ color: "#ffd700", fontWeight: 700, fontSize: 13, marginBottom: 14 }}>📋 SOFTWARE LICENSE & PAYMENT TERMS</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+          {[["1st Installation Fee", "PKR 15,000"], ["Annual Fee", "PKR 10,000"], ["Monthly Fee", "PKR 2,000"], ["Due Date", "5th of Each Month"]].map(([l, v]) => (
+            <div key={l} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "10px 14px", border: "1px solid rgba(255,200,0,0.15)" }}>
+              <div style={{ color: "rgba(255,200,0,0.7)", fontSize: 10, letterSpacing: 1, marginBottom: 3 }}>{l}</div>
+              <div style={{ color: "#fff", fontSize: 15, fontWeight: 700, fontFamily: "Orbitron" }}>{v}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ background: "rgba(0,180,255,0.05)", border: "1px solid rgba(0,180,255,0.18)", borderRadius: 10, padding: "12px 16px" }}>
+          <div style={{ color: "#00b4ff", fontWeight: 700, fontSize: 12, marginBottom: 8 }}>💳 PAYMENT METHOD</div>
+          <div style={{ color: "rgba(255,255,255,0.75)", fontSize: 13, lineHeight: 2.1 }}>
+            Bank: <b style={{ color: "#fff" }}>Bank Alfalah</b><br />
+            Account#: <b style={{ color: "#ffd700", fontFamily: "monospace", letterSpacing: 2 }}>0203-1005098235</b><br />
+            Account Name: <b style={{ color: "#fff" }}>Mian Ahmed Umer</b>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── STOCK PDF GENERATOR ──────────────────────────────────────────────────────
+function downloadStockPDF(filtered, filterCat, filterCo, filterStatus) {
+  const now = new Date().toLocaleString("en-PK");
+  const filterDesc = [
+    filterCat    !== "All" ? `Category: ${filterCat}` : "",
+    filterCo     !== "All" ? `Company: ${filterCo}`   : "",
+    filterStatus !== "All" ? `Status: ${
+      filterStatus === "out"      ? "Out of Stock"  :
+      filterStatus === "low"      ? "Low Stock"     :
+      filterStatus === "ok"       ? "In Stock"      :
+      filterStatus === "expired"  ? "Expired Items" :
+      filterStatus === "expiring" ? "Expiring Soon" : filterStatus
+    }` : "",
+  ].filter(Boolean).join("  |  ") || "All Items";
+
+  const totalValue = filtered.reduce((s, i) => s + parseFloat(i.Price || 0) * (Number(i.Stock) || 0), 0);
+  const outCount   = filtered.filter(i => (Number(i.Stock) || 0) <= 0).length;
+  const lowCount   = filtered.filter(i => (Number(i.Stock) || 0) > 0 && (Number(i.Stock) || 0) <= 5).length;
+  const okCount    = filtered.filter(i => (Number(i.Stock) || 0) > 5).length;
+
+  const rows = filtered.map((item, i) => {
+    const stk         = Number(item.Stock) || 0;
+    const statusColor = stk <= 0 ? "#c0392b" : stk <= 5 ? "#d68910" : "#1e8449";
+    const statusText  = stk <= 0 ? "OUT"     : stk <= 5 ? "LOW"     : "OK";
+    const rowBg       = i % 2 === 0 ? "#ffffff" : "#f7f9fc";
+    const es          = getExpiryStatus(item.ExpiryDate);
+    const expiryColor = es.status === "expired" ? "#c0392b" : es.status === "critical" || es.status === "today" ? "#d35400" : es.status === "warning" ? "#d68910" : es.status === "ok" ? "#1e8449" : "#888";
+    const expiryText  = item.ExpiryDate ? fmtExpiry(item.ExpiryDate) : "—";
+    const expiryLabel = item.ExpiryDate ? es.label : "";
+    return `
+      <tr style="background:${rowBg}">
+        <td style="text-align:center;color:#888">${i + 1}</td>
+        <td style="font-family:monospace;font-size:10px;color:#555">${item.Barcode}</td>
+        <td style="font-weight:600;color:#111">${item.ItemName}</td>
+        <td style="color:#444">${item.Category || "—"}</td>
+        <td style="color:#0057a8">${item.Company || "—"}</td>
+        <td style="text-align:right;font-weight:700">PKR ${fmt(item.Price)}</td>
+        <td style="text-align:right;color:#555">${item.CostPrice ? "PKR " + fmt(item.CostPrice) : "—"}</td>
+        <td style="text-align:right;font-weight:800;font-size:13px;color:${statusColor}">${item.Stock}</td>
+        <td style="text-align:center">
+          <div style="color:${expiryColor};font-weight:700;font-size:11px">${expiryText}</div>
+          <div style="color:${expiryColor};font-size:9px;opacity:0.85">${expiryLabel}</div>
+        </td>
+        <td style="text-align:center">
+          <span style="background:${statusColor};color:#fff;padding:2px 9px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:0.5px">${statusText}</span>
+        </td>
+      </tr>`;
+  }).join("");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>Stock Report — itKINS MART</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box }
+    body { font-family: Arial, sans-serif; font-size: 12px; color: #222; background: #fff; padding: 24px }
+    h1 { font-size: 22px; color: #0a2540; margin-bottom: 3px }
+    .sub { color: #666; font-size: 11px; margin-bottom: 18px }
+    .cards { display: flex; gap: 14px; margin-bottom: 20px }
+    .card { flex: 1; border-radius: 8px; padding: 13px 16px; text-align: center }
+    .card .val { font-size: 22px; font-weight: 800; margin-bottom: 3px }
+    .card .lbl { font-size: 10px; color: #666; text-transform: uppercase; letter-spacing: 0.5px }
+    table { width: 100%; border-collapse: collapse }
+    thead th { background: #0a2540; color: #fff; padding: 9px 10px; text-align: left; font-size: 10px; letter-spacing: 0.8px; text-transform: uppercase }
+    tbody td { padding: 7px 10px; border-bottom: 1px solid #eaecef }
+    .footer { margin-top: 24px; text-align: center; font-size: 10px; color: #aaa; border-top: 1px solid #eee; padding-top: 10px }
+    @media print {
+      body { padding: 10px }
+      .footer { position: fixed; bottom: 0; width: 100% }
+    }
+  </style>
+  </head><body>
+  <h1>📦 Stock Report — itKINS MART &amp; BAKERY</h1>
+  <div class="sub">Generated: ${now} &nbsp;·&nbsp; Filter: ${filterDesc} &nbsp;·&nbsp; Total Items: ${filtered.length}</div>
+  <div class="cards">
+    <div class="card" style="background:#fde8e8;border:1px solid #f5c6c6">
+      <div class="val" style="color:#c0392b">${outCount}</div>
+      <div class="lbl">Out of Stock</div>
+    </div>
+    <div class="card" style="background:#fef9e7;border:1px solid #f9e4a0">
+      <div class="val" style="color:#d68910">${lowCount}</div>
+      <div class="lbl">Low Stock (≤5)</div>
+    </div>
+    <div class="card" style="background:#e8f8f0;border:1px solid #a9dfbf">
+      <div class="val" style="color:#1e8449">${okCount}</div>
+      <div class="lbl">In Stock</div>
+    </div>
+    <div class="card" style="background:#eaf4ff;border:1px solid #a9ccee">
+      <div class="val" style="color:#1a5276;font-size:16px">PKR ${fmt(totalValue)}</div>
+      <div class="lbl">Stock Value</div>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:32px;text-align:center">#</th>
+        <th>Barcode</th>
+        <th>Item Name</th>
+        <th>Category</th>
+        <th>Company</th>
+        <th style="text-align:right">Price</th>
+        <th style="text-align:right">Cost</th>
+        <th style="text-align:right">Stock</th>
+        <th style="text-align:center">Expiry</th>
+        <th style="text-align:center">Status</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="footer">itKINS POS System &nbsp;·&nbsp; Designed by itkins.com &nbsp;|&nbsp; 0304-7414437</div>
+  <script>window.onload = () => { window.print(); }</script>
+  </body></html>`;
+
+  const w = window.open("", "_blank", "width=960,height=720");
+  if (!w) { alert("Please allow popups for this page to download PDF!"); return; }
+  w.document.write(html);
+  w.document.close();
+}
+
+
+// ─── SHARED STYLES ─────────────────────────────────────────────────────────────
+const inSt = { padding: "9px 12px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(0,180,255,0.22)", borderRadius: 7, color: "#fff", fontSize: 13, outline: "none", width: "100%" };
+const slSt = { padding: "9px 12px", background: "#0c1828", border: "1px solid rgba(0,180,255,0.22)", borderRadius: 7, color: "#fff", fontSize: 13, outline: "none", cursor: "pointer" };
+const lbSt = { display: "block", color: "rgba(0,180,255,0.68)", fontSize: 10, letterSpacing: 1.5, marginBottom: 5, fontWeight: 600 };
+const bdgSt = color => ({ background: `rgba(${color === "#00b4ff" ? "0,180,255" : "255,255,255"},0.07)`, border: `1px solid rgba(${color === "#00b4ff" ? "0,180,255" : "255,255,255"},0.16)`, borderRadius: 20, padding: "3px 11px", color, fontSize: 11, fontWeight: 600 });
