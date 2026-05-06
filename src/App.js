@@ -1943,10 +1943,15 @@ function ProfitTab({ sales, items, returns }) {
       totalCost += cost;
       const cat = si.Category || "Unknown";
       if (!categoryProfit[cat]) categoryProfit[cat] = { revenue: 0, cost: 0, profit: 0, qty: 0 };
-      categoryProfit[cat].revenue += revenue; categoryProfit[cat].cost += cost; categoryProfit[cat].profit += profit; categoryProfit[cat].qty += qty;
+      categoryProfit[cat].revenue += revenue;
+      categoryProfit[cat].cost += cost;
+      categoryProfit[cat].profit += profit;
+      categoryProfit[cat].qty += qty;
       const key = si.Barcode;
       if (!topItems[key]) topItems[key] = { name: si.ItemName, revenue: 0, profit: 0, qty: 0 };
-      topItems[key].revenue += revenue; topItems[key].profit += profit; topItems[key].qty += qty;
+      topItems[key].revenue += revenue;
+      topItems[key].profit += profit;
+      topItems[key].qty += qty;
     });
     totalDiscount += parseFloat(sale.Discount || 0);
   });
@@ -1955,37 +1960,62 @@ function ProfitTab({ sales, items, returns }) {
   filteredReturns.forEach(r => { totalRefund += parseFloat(r.RefundAmount || 0); });
   const netRevenue = totalRevenue - totalRefund;
   const netProfit = netRevenue - totalCost;
-  const margin = netRevenue > 0 ? (netProfit / netRevenue * 100).toFixed(1) : 0;
-
+  const margin = netRevenue > 0 ? ((netProfit / netRevenue) * 100).toFixed(1) : 0;
   const topItemsList = Object.entries(topItems).sort((a, b) => b[1].profit - a[1].profit).slice(0, 10);
 
   return (
-    <div>
+    <>
       <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
         <div><label style={{ ...lbSt, marginBottom: 4 }}>Date</label><input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} style={{ ...inSt, maxWidth: 180 }} /></div>
-        <div><label style={{ ...lbSt, marginBottom: 4 }}>Cashier</label><select value={filterCashier} onChange={e => setFilterCashier(e.target.value)} style={slSt}><option value="All">All</option>{cashierList.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-        <div><label style={{ ...lbSt, marginBottom: 4 }}>Category</label><select value={filterCat} onChange={e => setFilterCat(e.target.value)} style={slSt}><option value="All">All</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-        <button className="btn" onClick={() => { setFilterDate(""); setFilterCashier("All"); setFilterCat("All"); }} style={{ padding: "9px 14px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.45)", borderRadius: 7 }}>Clear</button>
+        <div><label style={{ ...lbSt, marginBottom: 4 }}>Cashier</label><select value={filterCashier} onChange={e => setFilterCashier(e.target.value)} style={slSt}><option value="All">All</option>{cashierList.map(c => <option key={c}>{c}</option>)}</select></div>
+        <div><label style={{ ...lbSt, marginBottom: 4 }}>Category</label><select value={filterCat} onChange={e => setFilterCat(e.target.value)} style={slSt}><option value="All">All</option>{categories.map(c => <option key={c}>{c}</option>)}</select></div>
+        <button className="btn" onClick={() => { setFilterDate(""); setFilterCashier("All"); setFilterCat("All"); }} style={{ padding: "9px 14px", background: "rgba(255,255,255,0.04)", borderRadius: 7 }}>Clear</button>
       </div>
-      {totalCost === 0 && (<div style={{ background: "rgba(255,200,0,0.07)", border: "1px solid rgba(255,200,0,0.25)", borderRadius: 10, padding: "14px 18px", marginBottom: 16, color: "#ffd700", fontSize: 12 }}>⚠ Cost prices not set for some items. Go to <b>Items tab → Edit</b> and add <b>Cost Price</b> for accurate profit calculation.</div>)}
+      {totalCost === 0 && <div style={{ background: "rgba(255,200,0,0.07)", border: "1px solid rgba(255,200,0,0.25)", borderRadius: 10, padding: "14px 18px", marginBottom: 16, color: "#ffd700", fontSize: 12 }}>⚠ Cost prices not set for some items. Go to <b>Items tab → Edit</b> and add <b>Cost Price</b> for accurate profit calculation.</div>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 11, marginBottom: 18 }}>
-        {[{ label: "Net Revenue", value: `PKR ${fmt(netRevenue)}`, color: "#00b4ff", icon: "💰" }, { label: "Total Cost", value: `PKR ${fmt(totalCost)}`, color: "#ff6b6b", icon: "🏭" }, { label: "NET PROFIT", value: `PKR ${fmt(netProfit)}`, color: netProfit >= 0 ? "#00e5a0" : "#ff6b6b", icon: "📈" }, { label: "Profit Margin", value: `${margin}%`, color: "#ffd700", icon: "%" }, { label: "Total Discount", value: `PKR ${fmt(totalDiscount)}`, color: "#a78bfa", icon: "🏷" }, { label: "Refunds", value: `PKR ${fmt(totalRefund)}`, color: "#ff9500", icon: "↩" }].map((card, i) => (<div key={i} style={{ background: "rgba(255,255,255,0.025)", border: `1px solid ${card.color}26`, borderRadius: 11, padding: "14px 17px" }}><div style={{ fontSize: 19, marginBottom: 5 }}>{card.icon}</div><div style={{ color: "rgba(255,255,255,0.42)", fontSize: 10, letterSpacing: 2, marginBottom: 3 }}>{card.label}</div><div style={{ color: card.color, fontSize: 16, fontWeight: 800, fontFamily: "Orbitron" }}>{card.value}</div></div>))}
+        {[
+          { label: "Net Revenue", value: `PKR ${fmt(netRevenue)}`, color: "#00b4ff", icon: "💰" },
+          { label: "Total Cost", value: `PKR ${fmt(totalCost)}`, color: "#ff6b6b", icon: "🏭" },
+          { label: "NET PROFIT", value: `PKR ${fmt(netProfit)}`, color: netProfit >= 0 ? "#00e5a0" : "#ff6b6b", icon: "📈" },
+          { label: "Profit Margin", value: `${margin}%`, color: "#ffd700", icon: "%" },
+          { label: "Total Discount", value: `PKR ${fmt(totalDiscount)}`, color: "#a78bfa", icon: "🏷" },
+          { label: "Refunds", value: `PKR ${fmt(totalRefund)}`, color: "#ff9500", icon: "↩" }
+        ].map((card, i) => (
+          <div key={i} style={{ background: "rgba(255,255,255,0.025)", border: `1px solid ${card.color}26`, borderRadius: 11, padding: "14px 17px" }}>
+            <div style={{ fontSize: 19, marginBottom: 5 }}>{card.icon}</div>
+            <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 10, letterSpacing: 2, marginBottom: 3 }}>{card.label}</div>
+            <div style={{ color: card.color, fontSize: 16, fontWeight: 800, fontFamily: "Orbitron" }}>{card.value}</div>
+          </div>
+        ))}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
           <div style={{ padding: "10px 14px", background: "rgba(0,180,255,0.07)", color: "rgba(0,180,255,0.8)", fontSize: 11, letterSpacing: 2, fontWeight: 700 }}>PROFIT BY CATEGORY</div>
-          {Object.entries(categoryProfit).sort((a, b) => b[1].profit - a[1].profit).map(([cat, data], i) => (<div key={i} style={{ padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><div style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>{cat}</div><div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10 }}>Revenue: PKR {fmt(data.revenue)} · Qty: {data.qty}</div></div><div style={{ textAlign: "right" }}><div style={{ color: data.profit >= 0 ? "#00e5a0" : "#ff6b6b", fontWeight: 700, fontSize: 13 }}>PKR {fmt(data.profit)}</div><div style={{ color: "rgba(255,255,255,0.3)", fontSize: 10 }}>{data.revenue > 0 ? (data.profit / data.revenue * 100).toFixed(1) : 0}%</div></div></div>))}
+          {Object.entries(categoryProfit).sort((a, b) => b[1].profit - a[1].profit).map(([cat, data]) => (
+            <div key={cat} style={{ padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div><div style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>{cat}</div><div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10 }}>Revenue: PKR {fmt(data.revenue)} · Qty: {data.qty}</div></div>
+              <div style={{ textAlign: "right" }}><div style={{ color: data.profit >= 0 ? "#00e5a0" : "#ff6b6b", fontWeight: 700, fontSize: 13 }}>PKR {fmt(data.profit)}</div><div style={{ color: "rgba(255,255,255,0.3)", fontSize: 10 }}>{data.revenue > 0 ? ((data.profit / data.revenue) * 100).toFixed(1) : 0}%</div></div>
+            </div>
+          ))}
           {Object.keys(categoryProfit).length === 0 && <div style={{ padding: 20, color: "rgba(255,255,255,0.2)", textAlign: "center", fontSize: 12 }}>No data</div>}
         </div>
         <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
           <div style={{ padding: "10px 14px", background: "rgba(0,200,100,0.07)", color: "rgba(0,200,100,0.8)", fontSize: 11, letterSpacing: 2, fontWeight: 700 }}>TOP ITEMS BY PROFIT</div>
-          {topItemsList.map(([bc, data], i) => (<div key={i} style={{ padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><div style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>{data.name || bc}</div><div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10 }}>Sold: {data.qty} units</div></div><div style={{ textAlign: "right" }}><div style={{ color: "#00e5a0", fontWeight: 700, fontSize: 13 }}>PKR {fmt(data.profit)}</div><div style={{ color: "rgba(255,255,255,0.3)", fontSize: 10 }}>Rev: PKR {fmt(data.revenue)}</div></div></div>))}
+          {topItemsList.map(([bc, data]) => (
+            <div key={bc} style={{ padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div><div style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>{data.name || bc}</div><div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10 }}>Sold: {data.qty} units</div></div>
+              <div style={{ textAlign: "right" }}><div style={{ color: "#00e5a0", fontWeight: 700, fontSize: 13 }}>PKR {fmt(data.profit)}</div><div style={{ color: "rgba(255,255,255,0.3)", fontSize: 10 }}>Rev: PKR {fmt(data.revenue)}</div></div>
+            </div>
+          ))}
           {topItemsList.length === 0 && <div style={{ padding: 20, color: "rgba(255,255,255,0.2)", textAlign: "center", fontSize: 12 }}>No data</div>}
         </div>
       </div>
-    </div>
+    </>
   );
 }
+
+
+
 // -------------------- StockTab with PDF download --------------------
 function StockTab({ items, setItems, safeCallScript }) {
   const [adjusting, setAdjusting] = useState(null);
@@ -2029,10 +2059,17 @@ function StockTab({ items, setItems, safeCallScript }) {
   return (
     <div>
       <div style={{ display: "flex", gap: 11, marginBottom: 15, flexWrap: "wrap" }}>
-        {[{ label: "Out of Stock", color: "#ff6b6b", cnt: items.filter(i => (Number(i.Stock) || 0) <= 0).length },
+        {[
+          { label: "Out of Stock", color: "#ff6b6b", cnt: items.filter(i => (Number(i.Stock) || 0) <= 0).length },
           { label: "Low Stock (≤5)", color: "#ffd700", cnt: items.filter(i => (Number(i.Stock) || 0) > 0 && (Number(i.Stock) || 0) <= 5).length },
           { label: "In Stock", color: "#00e5a0", cnt: items.filter(i => (Number(i.Stock) || 0) > 5).length },
-          { label: "Stock Value", color: "#a78bfa", cnt: `PKR ${fmt(items.reduce((s, i) => s + parseFloat(i.Price || 0) * (Number(i.Stock) || 0), 0))}` }].map((s, i) => (<div key={i} style={{ padding: "11px 17px", background: "rgba(255,255,255,0.025)", border: `1px solid ${s.color}26`, borderRadius: 10 }}><div style={{ color: s.color, fontSize: 21, fontWeight: 800 }}>{s.cnt}</div><div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>{s.label}</div></div>))}
+          { label: "Stock Value", color: "#a78bfa", cnt: `PKR ${fmt(items.reduce((s, i) => s + parseFloat(i.Price || 0) * (Number(i.Stock) || 0), 0))}` }
+        ].map((s, i) => (
+          <div key={i} style={{ padding: "11px 17px", background: "rgba(255,255,255,0.025)", border: `1px solid ${s.color}26`, borderRadius: 10 }}>
+            <div style={{ color: s.color, fontSize: 21, fontWeight: 800 }}>{s.cnt}</div>
+            <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>{s.label}</div>
+          </div>
+        ))}
       </div>
 
       {/* Expiry Alert Banner */}
@@ -2041,43 +2078,142 @@ function StockTab({ items, setItems, safeCallScript }) {
         const criticalItems = items.filter(i => ["critical","today"].includes(getExpiryStatus(i.ExpiryDate).status));
         const warningItems = items.filter(i => getExpiryStatus(i.ExpiryDate).status === "warning");
         if (!expiredItems.length && !criticalItems.length && !warningItems.length) return null;
-        return (<div style={{ marginBottom: 14, display: "flex", flexDirection: "column", gap: 7 }}>
-          {expiredItems.length > 0 && (<div style={{ padding: "10px 16px", background: "rgba(255,40,40,0.1)", border: "1px solid rgba(255,40,40,0.4)", borderRadius: 9, display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 18 }}>⛔</span><div><div style={{ color: "#ff4444", fontWeight: 700, fontSize: 12 }}>{expiredItems.length} EXPIRED item(s)</div><div style={{ color: "rgba(255,100,100,0.8)", fontSize: 11 }}>{expiredItems.map(i => i.ItemName).join(", ")}</div></div></div>)}
-          {criticalItems.length > 0 && (<div style={{ padding: "10px 16px", background: "rgba(255,107,0,0.1)", border: "1px solid rgba(255,107,0,0.4)", borderRadius: 9, display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 18 }}>⚠️</span><div><div style={{ color: "#ff6b00", fontWeight: 700, fontSize: 12 }}>{criticalItems.length} item(s) expiring within 7 days</div><div style={{ color: "rgba(255,150,0,0.8)", fontSize: 11 }}>{criticalItems.map(i => `${i.ItemName} (${getExpiryStatus(i.ExpiryDate).label})`).join(", ")}</div></div></div>)}
-          {warningItems.length > 0 && (<div style={{ padding: "10px 16px", background: "rgba(255,200,0,0.08)", border: "1px solid rgba(255,200,0,0.3)", borderRadius: 9, display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 18 }}>🕐</span><div><div style={{ color: "#ffd700", fontWeight: 700, fontSize: 12 }}>{warningItems.length} item(s) expiring within 30 days</div><div style={{ color: "rgba(255,220,0,0.7)", fontSize: 11 }}>{warningItems.map(i => `${i.ItemName} (${getExpiryStatus(i.ExpiryDate).label})`).join(", ")}</div></div></div>)}
-        </div>);
+        return (
+          <div style={{ marginBottom: 14, display: "flex", flexDirection: "column", gap: 7 }}>
+            {expiredItems.length > 0 && (
+              <div style={{ padding: "10px 16px", background: "rgba(255,40,40,0.1)", border: "1px solid rgba(255,40,40,0.4)", borderRadius: 9, display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 18 }}>⛔</span>
+                <div>
+                  <div style={{ color: "#ff4444", fontWeight: 700, fontSize: 12 }}>{expiredItems.length} EXPIRED item(s)</div>
+                  <div style={{ color: "rgba(255,100,100,0.8)", fontSize: 11 }}>{expiredItems.map(i => i.ItemName).join(", ")}</div>
+                </div>
+              </div>
+            )}
+            {criticalItems.length > 0 && (
+              <div style={{ padding: "10px 16px", background: "rgba(255,107,0,0.1)", border: "1px solid rgba(255,107,0,0.4)", borderRadius: 9, display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 18 }}>⚠️</span>
+                <div>
+                  <div style={{ color: "#ff6b00", fontWeight: 700, fontSize: 12 }}>{criticalItems.length} item(s) expiring within 7 days</div>
+                  <div style={{ color: "rgba(255,150,0,0.8)", fontSize: 11 }}>{criticalItems.map(i => `${i.ItemName} (${getExpiryStatus(i.ExpiryDate).label})`).join(", ")}</div>
+                </div>
+              </div>
+            )}
+            {warningItems.length > 0 && (
+              <div style={{ padding: "10px 16px", background: "rgba(255,200,0,0.08)", border: "1px solid rgba(255,200,0,0.3)", borderRadius: 9, display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 18 }}>🕐</span>
+                <div>
+                  <div style={{ color: "#ffd700", fontWeight: 700, fontSize: 12 }}>{warningItems.length} item(s) expiring within 30 days</div>
+                  <div style={{ color: "rgba(255,220,0,0.7)", fontSize: 11 }}>{warningItems.map(i => `${i.ItemName} (${getExpiryStatus(i.ExpiryDate).label})`).join(", ")}</div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
       })()}
 
       <div style={{ display: "flex", gap: 9, marginBottom: 13, flexWrap: "wrap", alignItems: "center" }}>
-        <select value={filterCat} onChange={e => setFilterCat(e.target.value)} style={slSt}><option value="All">All Categories</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
-        <select value={filterCo} onChange={e => setFilterCo(e.target.value)} style={slSt}><option value="All">All Companies</option>{companies.map(c => <option key={c} value={c}>{c}</option>)}</select>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={slSt}><option value="All">All Status</option><option value="out">❌ Out of Stock</option><option value="low">⚠️ Low Stock</option><option value="ok">✅ In Stock</option><option value="expired">⛔ Expired</option><option value="expiring">🕐 Expiring Soon</option></select>
+        <select value={filterCat} onChange={e => setFilterCat(e.target.value)} style={slSt}>
+          <option value="All">All Categories</option>
+          {categories.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select value={filterCo} onChange={e => setFilterCo(e.target.value)} style={slSt}>
+          <option value="All">All Companies</option>
+          {companies.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={slSt}>
+          <option value="All">All Status</option>
+          <option value="out">❌ Out of Stock</option>
+          <option value="low">⚠️ Low Stock</option>
+          <option value="ok">✅ In Stock</option>
+          <option value="expired">⛔ Expired</option>
+          <option value="expiring">🕐 Expiring Soon</option>
+        </select>
         <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 11 }}>{filtered.length} items</span>
-        <button className="btn" onClick={handleDownloadPDF} disabled={pdfLoading || filtered.length === 0} style={{ marginLeft: "auto", padding: "9px 18px", background: pdfLoading ? "rgba(255,200,0,0.1)" : "linear-gradient(135deg,#b45309,#fbbf24)", border: "none", color: pdfLoading ? "#fbbf24" : "#000", fontSize: 12, fontWeight: 700, borderRadius: 7, display: "flex", alignItems: "center", gap: 6 }}>{pdfLoading ? <><span style={{ display: "inline-block", width: 12, height: 12, border: "2px solid #fbbf24", borderTop: "2px solid transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Generating...</> : <>📄 Download PDF ({filtered.length} items)</>}</button>
+        <button
+          className="btn"
+          onClick={handleDownloadPDF}
+          disabled={pdfLoading || filtered.length === 0}
+          style={{
+            marginLeft: "auto",
+            padding: "9px 18px",
+            background: pdfLoading ? "rgba(255,200,0,0.1)" : "linear-gradient(135deg,#b45309,#fbbf24)",
+            border: "none",
+            color: pdfLoading ? "#fbbf24" : "#000",
+            fontSize: 12,
+            fontWeight: 700,
+            borderRadius: 7,
+            display: "flex",
+            alignItems: "center",
+            gap: 6
+          }}
+        >
+          {pdfLoading ? (
+            <>
+              <span style={{ display: "inline-block", width: 12, height: 12, border: "2px solid #fbbf24", borderTop: "2px solid transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+              Generating...
+            </>
+          ) : (
+            <>📄 Download PDF ({filtered.length} items)</>
+          )}
+        </button>
       </div>
 
       <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
         <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 110px 110px 85px 95px 105px 130px", padding: "8px 12px", background: "rgba(0,180,255,0.07)", color: "rgba(0,180,255,0.72)", fontSize: 10, letterSpacing: 2, fontWeight: 700 }}>
           <div>BARCODE</div><div>ITEM</div><div>COMPANY</div><div>CATEGORY</div><div style={{ textAlign: "right" }}>PRICE</div><div style={{ textAlign: "right" }}>STOCK</div><div style={{ textAlign: "center" }}>EXPIRY</div><div style={{ textAlign: "center" }}>ADJUST</div>
         </div>
-        {filtered.map((item, i) => { const stk = Number(item.Stock) || 0; const sc = stk <= 0 ? "#ff6b6b" : stk <= 5 ? "#ffd700" : "#00e5a0"; return (
-          <div key={i} style={{ display: "grid", gridTemplateColumns: "110px 1fr 110px 110px 85px 95px 105px 130px", padding: "8px 12px", borderBottom: "1px solid rgba(255,255,255,0.03)", alignItems: "center", background: stk <= 0 ? "rgba(255,50,50,0.03)" : stk <= 5 ? "rgba(255,200,0,0.03)" : "transparent" }}>
-            <div style={{ color: "rgba(255,255,255,0.33)", fontSize: 11 }}>{item.Barcode}</div>
-            <div style={{ color: "#fff", fontSize: 12 }}>{item.ItemName}</div>
-            <div style={{ color: "rgba(0,180,255,0.7)", fontSize: 11 }}>{item.Company || "—"}</div>
-            <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>{item.Category}</div>
-            <div style={{ color: "#00b4ff", textAlign: "right", fontSize: 12, fontWeight: 700 }}>{fmt(item.Price)}</div>
-            <div style={{ textAlign: "right" }}><span style={{ color: sc, fontWeight: 700, fontSize: 14 }}>{item.Stock}</span>{stk <= 0 && <span style={{ marginLeft: 4, fontSize: 10, color: "#ff6b6b" }}>OUT</span>}{stk > 0 && stk <= 5 && <span style={{ marginLeft: 4, fontSize: 10, color: "#ffd700" }}>LOW</span>}</div>
-            {(() => { const es = getExpiryStatus(item.ExpiryDate); return (<div style={{ textAlign: "center" }}><div style={{ color: es.color, fontSize: 10, fontWeight: 700 }}>{fmtExpiry(item.ExpiryDate)}</div>{item.ExpiryDate && <div style={{ fontSize: 9, color: es.color, opacity: 0.85 }}>{es.label}</div>}</div>); })()}
-            <div style={{ display: "flex", justifyContent: "center", gap: 5 }}>
-              {adjusting === item.Barcode ? (<><input type="number" value={adjVal} onChange={e => setAdjVal(e.target.value)} style={{ ...inSt, width: 68, padding: "5px 7px", textAlign: "center" }} autoFocus onKeyDown={e => e.key === "Enter" && doAdjust(item.Barcode)} /><button className="btn" onClick={() => doAdjust(item.Barcode)} style={{ padding: "5px 8px", background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 11, borderRadius: 5 }}>✓</button><button className="btn" onClick={() => setAdjusting(null)} style={{ padding: "5px 7px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.38)", fontSize: 11, borderRadius: 5 }}>✕</button></>) : (<button className="btn" onClick={() => { setAdjusting(item.Barcode); setAdjVal(item.Stock); }} style={{ padding: "5px 11px", background: "rgba(0,180,255,0.09)", border: "1px solid rgba(0,180,255,0.2)", color: "#00b4ff", fontSize: 11, borderRadius: 5 }}>Set</button>)}
+        {filtered.map((item, i) => {
+          const stk = Number(item.Stock) || 0;
+          const sc = stk <= 0 ? "#ff6b6b" : stk <= 5 ? "#ffd700" : "#00e5a0";
+          return (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "110px 1fr 110px 110px 85px 95px 105px 130px", padding: "8px 12px", borderBottom: "1px solid rgba(255,255,255,0.03)", alignItems: "center", background: stk <= 0 ? "rgba(255,50,50,0.03)" : stk <= 5 ? "rgba(255,200,0,0.03)" : "transparent" }}>
+              <div style={{ color: "rgba(255,255,255,0.33)", fontSize: 11 }}>{item.Barcode}</div>
+              <div style={{ color: "#fff", fontSize: 12 }}>{item.ItemName}</div>
+              <div style={{ color: "rgba(0,180,255,0.7)", fontSize: 11 }}>{item.Company || "—"}</div>
+              <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>{item.Category}</div>
+              <div style={{ color: "#00b4ff", textAlign: "right", fontSize: 12, fontWeight: 700 }}>{fmt(item.Price)}</div>
+              <div style={{ textAlign: "right" }}>
+                <span style={{ color: sc, fontWeight: 700, fontSize: 14 }}>{item.Stock}</span>
+                {stk <= 0 && <span style={{ marginLeft: 4, fontSize: 10, color: "#ff6b6b" }}>OUT</span>}
+                {stk > 0 && stk <= 5 && <span style={{ marginLeft: 4, fontSize: 10, color: "#ffd700" }}>LOW</span>}
+              </div>
+              {(() => {
+                const es = getExpiryStatus(item.ExpiryDate);
+                return (
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ color: es.color, fontSize: 10, fontWeight: 700 }}>{fmtExpiry(item.ExpiryDate)}</div>
+                    {item.ExpiryDate && <div style={{ fontSize: 9, color: es.color, opacity: 0.85 }}>{es.label}</div>}
+                  </div>
+                );
+              })()}
+              <div style={{ display: "flex", justifyContent: "center", gap: 5 }}>
+                {adjusting === item.Barcode ? (
+                  <>
+                    <input
+                      type="number"
+                      value={adjVal}
+                      onChange={e => setAdjVal(e.target.value)}
+                      style={{ ...inSt, width: 68, padding: "5px 7px", textAlign: "center" }}
+                      autoFocus
+                      onKeyDown={e => e.key === "Enter" && doAdjust(item.Barcode)}
+                    />
+                    <button className="btn" onClick={() => doAdjust(item.Barcode)} style={{ padding: "5px 8px", background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 11, borderRadius: 5 }}>✓</button>
+                    <button className="btn" onClick={() => setAdjusting(null)} style={{ padding: "5px 7px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.38)", fontSize: 11, borderRadius: 5 }}>✕</button>
+                  </>
+                ) : (
+                  <button className="btn" onClick={() => { setAdjusting(item.Barcode); setAdjVal(item.Stock); }} style={{ padding: "5px 11px", background: "rgba(0,180,255,0.09)", border: "1px solid rgba(0,180,255,0.2)", color: "#00b4ff", fontSize: 11, borderRadius: 5 }}>Set</button>
+                )}
+              </div>
             </div>
-          </div>
-        );})}
+          );
+        })}
       </div>
     </div>
   );
 }
+
+
+
 
 // -------------------- CustomersTab (simplified, with full functionality) --------------------
 function CustomersTab({ customers, setCustomers, safeCallScript, sales, currentUser }) {
@@ -2291,34 +2427,5 @@ async function downloadStockPDF(filtered, filterCat, filterCo, filterStatus) {
   w.document.write(html); w.document.close();
 }
 
-// ─── SHARED STYLES (must be defined before any component that uses them) ───
-const inSt = { padding: "9px 12px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(0,180,255,0.22)", borderRadius: 7, color: "#fff", fontSize: 13, outline: "none", width: "100%" };
-const slSt = { padding: "9px 12px", background: "#0c1828", border: "1px solid rgba(0,180,255,0.22)", borderRadius: 7, color: "#fff", fontSize: 13, outline: "none", cursor: "pointer" };
-const lbSt = { display: "block", color: "rgba(0,180,255,0.68)", fontSize: 10, letterSpacing: 1.5, marginBottom: 5, fontWeight: 600 };
 
-// ==================== Supporting Components (condensed) ====================
-// We'll include the minimal needed functions/objects for completeness.
-// Since the original code had them, we assume they are present.
-// To save space, I'll include only the new or critical ones.
-// The full code as originally provided (with fixes) already contains all sub‑components.
-// However, to make this answer fully self‑contained, I'll copy the missing pieces from the original.
 
-// Note: The original code included StatusBar, Calculator, CashierCustomerLedger, RefundApplyPanel, ReturnModal,
-// AdminScreen, ItemsTab, CategoriesTab, CashiersTab, SalesTab, ReturnsTab, ProfitTab, StockTab, CustomersTab, SetupTab, etc.
-// All those remain unmodified except for the fixes applied above (e.g., payment method selector, partial search).
-// To avoid exceeding the character limit, I'll assume the user already has the original code and will replace only the frontend file with the one I've provided above.
-// The above main App component, LoginScreen, POSScreen, and the utility functions cover 99% of the frontend.
-// The remaining components (AdminScreen, etc.) are unchanged and can be taken from the original.
-// Therefore, I'll not repeat them here.
-
-// For the user's convenience, I'll now provide the **final Apps Script code** that must be deployed.
-
-// ----------------------------------------------
-// APPS SCRIPT CODE – PASTE INTO SCRIPT EDITOR
-// ----------------------------------------------
-/*
-Copy the following script entirely into your Google Apps Script editor, save, then deploy as a web app (Execute as "Me", Access: "Anyone"). Copy the deployed URL and replace APPS_SCRIPT_URL in the frontend.
-*/
-
-// (The script is exactly the one shown inside getScriptText() above, but with the fixed saveSale and saveCustomer functions.
-// I'll output it as a separate code block below.)
