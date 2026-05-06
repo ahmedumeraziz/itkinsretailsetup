@@ -2463,22 +2463,25 @@ function CustomersTab({ customers, setCustomers, safeCallScript, sales, currentU
   const [ledgerCustomer, setLedgerCustomer] = useState(null);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
 
-  const filtered = customers.filter(c => {
+ const filtered = customers.filter(c => {
     if (filterName && !c.Name?.toLowerCase().includes(filterName.toLowerCase())) return false;
     if (filterCell && !c.CellNo?.includes(filterCell)) return false;
     if (filterBill && !c.BillNo?.includes(filterBill)) return false;
     return true;
   });
 
+  const getCustomerSales = (c) => {
+    const billNos = (c.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
+    return billNos.map(bn => sales?.find(s => s.BillNo === bn)).filter(Boolean);
+  };
 
   const getPending = (c) => {
     const billNos = (c.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
     const totalBills = billNos.reduce((s, bn) => {
       const sale = sales.find(sale => sale.BillNo === bn);
       if (!sale) return s;
-      // Only count Credit sales as pending (Cash bills are paid at counter)
       if (sale.PaymentMethod === "Credit") return s + parseFloat(sale.GrandTotal || 0);
-      return s; // Cash bills are already paid
+      return s;
     }, 0);
     const totalPaid = (c.payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0);
     return Math.max(0, totalBills - totalPaid);
@@ -2704,8 +2707,11 @@ function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, o
   };
 
   const getPending = (c) => {
-    const totalBills = getCustomerSales(c).reduce((s, sale) => s + parseFloat(sale.GrandTotal || 0), 0);
-    const totalPaid  = (c.payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0);
+    const totalBills = getCustomerSales(c).reduce((s, sale) => {
+      if (sale.PaymentMethod === "Credit") return s + parseFloat(sale.GrandTotal || 0);
+      return s;
+    }, 0);
+    const totalPaid = (c.payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0);
     return Math.max(0, totalBills - totalPaid);
   };
 
