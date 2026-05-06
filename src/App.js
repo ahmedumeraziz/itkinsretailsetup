@@ -367,7 +367,7 @@ function printReturnReceipt(ret) {
 // ─── APPS SCRIPT TEXT ─────────────────────────────────────────────────────────
 function getScriptText() {
   return `// ═══════════════════════════════════════════════════════════════
-//  Apps Script v6.0
+//  Apps Script v7.0
 //  Designed by itKINS → Engr. Ahmed Umer (0304-7414437)
 //  Apps Script → Delete all → Paste → Save → Deploy → New Deployment → Web App → Copy /exec URL
 // ═══════════════════════════════════════════════════════════════
@@ -388,7 +388,7 @@ var HEADERS = {
   Cashier:    ["Name","Username","PIN","Role"],
   Sales:      ["BillNo","Date","Time","Cashier","GrandTotal","Discount","FBR","PaymentMethod","ItemsDetail","CustomerName","CustomerCell"],
   StockLog:   ["Date","Barcode","ItemName","StockBefore","StockAfter","Reason"],
-  Customer:   ["Name","CellNo","BillNo"],
+  Customer:   ["Name","CellNo","BillNo","Payments"],
   Returns:    ["ReturnNo","OrigBillNo","Date","Time","Cashier","Items","RefundAmount","Reason","UsedInBill"]
 };
 
@@ -397,7 +397,7 @@ function makeResp(data){
 }
 
 function doGet(e){
-  return makeResp({status:"ok",message:"itKINS Script v6 Running",time:new Date().toString()});
+  return makeResp({status:"ok",message:"itKINS Script v7 Running",time:new Date().toString()});
 }
 
 function doPost(e){
@@ -412,6 +412,7 @@ function doPost(e){
     switch(data.action){
       case "saveSale":         result=saveSale(ss,data);         break;
       case "saveCustomer":     result=saveCustomer(ss,data);     break;
+      case "savePayment":      result=savePayment(ss,data);      break;
       case "adjustStock":      result=adjustStock(ss,data);      break;
       case "addItem":          result=addItem(ss,data);          break;
       case "editItem":         result=editItem(ss,data);         break;
@@ -487,7 +488,6 @@ function markReturnUsed(ss,data){
   return{status:"ok",message:"Marked used: "+data.ReturnNo};
 }
 
-// REPLACE WITH:
 function saveSale(ss,data){
   var salesSh=ss.getSheetByName(SHEET_SALES);
   if(!salesSh)return{status:"error",message:"Sheet not found: "+SHEET_SALES};
@@ -496,26 +496,27 @@ function saveSale(ss,data){
     parseFloat(data.GrandTotal)||0,parseFloat(data.Discount)||0,parseFloat(data.FBR)||1,
     data.PaymentMethod||"",data.ItemsDetail||"[]",data.CustomerName||"Unknown",data.CustomerCell||""
   ]);
-  // Auto-save customer if Credit sale with valid customer info
+
+  // ── Auto-save customer if Credit sale with valid customer info ──
   var custName=(data.CustomerName||"").trim();
   var custCell=(data.CustomerCell||"").trim();
   if(custName && custName!=="Unknown" && custCell && data.PaymentMethod==="Credit"){
     var custSh=ss.getSheetByName(SHEET_CUSTOMER);
     if(custSh){
-      var hdrMap=getHeaders(custSh);
-      var cellIdx=hdrMap["CellNo"];
-      if(cellIdx!==undefined){
-        var rowNum=findRow(custSh,cellIdx,custCell);
-        if(rowNum===-1){
-          custSh.appendRow([custName,custCell,data.BillNo||""]);
+      var custHdrMap=getHeaders(custSh);
+      var custCellIdx=custHdrMap["CellNo"];
+      if(custCellIdx!==undefined){
+        var custRowNum=findRow(custSh,custCellIdx,custCell);
+        if(custRowNum===-1){
+          custSh.appendRow([custName,custCell,data.BillNo||"",""]);
         } else {
-          var billsIdx=hdrMap["BillNo"];
+          var billsIdx=custHdrMap["BillNo"];
           if(billsIdx!==undefined){
-            var existing=String(custSh.getRange(rowNum,billsIdx+1).getValue()||"");
-            var bills=existing.split(",").map(function(b){return b.trim();}).filter(Boolean);
-            if(!bills.includes(String(data.BillNo||""))){
-              bills.push(String(data.BillNo||""));
-              custSh.getRange(rowNum,billsIdx+1).setValue(bills.join(","));
+            var existingBills=String(custSh.getRange(custRowNum,billsIdx+1).getValue()||"");
+            var billsArr=existingBills.split(",").map(function(b){return b.trim();}).filter(Boolean);
+            if(data.BillNo && !billsArr.includes(String(data.BillNo))){
+              billsArr.push(String(data.BillNo));
+              custSh.getRange(custRowNum,billsIdx+1).setValue(billsArr.join(","));
             }
           }
         }
@@ -523,6 +524,7 @@ function saveSale(ss,data){
     }
   }
 
+  // ── Deduct stock ──
   var itemsSh=ss.getSheetByName(SHEET_ITEMS);
   var stockLogSh=ss.getSheetByName(SHEET_STOCKLOG);
   if(itemsSh&&data.items&&data.items.length>0){
@@ -589,7 +591,7 @@ function saveReturn(ss,data){
 
 function saveCustomer(ss,data){
   var sh=ss.getSheetByName(SHEET_CUSTOMER);
-  if(!sh)return{status:"error",message:"Sheet not found"};
+  if(!sh)return{status:"error",message:"Sheet not found: "+SHEET_CUSTOMER};
   var name=(data.Name||"").trim();
   var cell=(data.CellNo||"").trim();
   var billNo=(data.BillNo||"").trim();
@@ -600,15 +602,50 @@ function saveCustomer(ss,data){
   var rowNum=findRow(sh,cellIdx,cell);
   if(rowNum===-1){
     sh.appendRow([name,cell,billNo,""]);
-    return{status:"ok"};
+    return{status:"ok",message:"Customer created: "+name};
   }
+  // Update existing — add bill number if not already there
   var billsIdx=hdrMap["BillNo"];
-  if(billsIdx!==undefined){
+  if(billsIdx!==undefined && billNo){
     var existing=String(sh.getRange(rowNum,billsIdx+1).getValue()||"");
     var bills=existing.split(",").map(function(b){return b.trim();}).filter(Boolean);
-    if(billNo && !bills.includes(billNo)){bills.push(billNo);sh.getRange(rowNum,billsIdx+1).setValue(bills.join(","));}
+    if(!bills.includes(billNo)){
+      bills.push(billNo);
+      sh.getRange(rowNum,billsIdx+1).setValue(bills.join(","));
+    }
   }
-  return{status:"ok"};
+  return{status:"ok",message:"Customer updated: "+name};
+}
+
+function savePayment(ss,data){
+  var sh=ss.getSheetByName(SHEET_CUSTOMER);
+  if(!sh)return{status:"error",message:"Sheet not found: "+SHEET_CUSTOMER};
+  var cell=(data.CellNo||"").trim();
+  if(!cell)return{status:"error",message:"CellNo required"};
+  var hdrMap=getHeaders(sh);
+  var cellIdx=hdrMap["CellNo"];
+  if(cellIdx===undefined)return{status:"error",message:"CellNo column not found"};
+  var rowNum=findRow(sh,cellIdx,cell);
+  if(rowNum===-1)return{status:"error",message:"Customer not found: "+cell};
+  // Ensure Payments column exists
+  var payIdx=hdrMap["Payments"];
+  if(payIdx===undefined){
+    var col=sh.getLastColumn()+1;
+    sh.getRange(1,col).setValue("Payments");
+    payIdx=col-1;
+  }
+  // Read existing payments, append new one, write back as JSON
+  var existing=String(sh.getRange(rowNum,payIdx+1).getValue()||"");
+  var payments=[];
+  try{ if(existing.trim()) payments=JSON.parse(existing); }catch(e){ payments=[]; }
+  if(!Array.isArray(payments)) payments=[];
+  payments.push({
+    date:  data.date  || "",
+    amount: parseFloat(data.amount) || 0,
+    note:  data.note  || "Received"
+  });
+  sh.getRange(rowNum,payIdx+1).setValue(JSON.stringify(payments));
+  return{status:"ok",message:"Payment saved for: "+cell};
 }
 
 function adjustStock(ss,data){
@@ -719,8 +756,6 @@ function deleteCashier(ss,data){
 }
 `;
 }
-
-
 // ═══════════════════════════════════════════════════════════════
 //  DAILY BACKUP SCRIPT
 //  Designed by itKINS → Engr. Ahmed Umer (0304-7414437)
@@ -980,7 +1015,19 @@ export default function App() {
         const mx = pS.reduce((m, s) => Math.max(m, parseInt(s.BillNo) || 0), 0);
         if (mx > 0) setBillCounter(mx + 1);
       }
-      if (pCu.length) { setCustomers(pCu); await dbSaveAll("customers", pCu, "CellNo"); }
+if (pCu.length) {
+        const parsedCustomers = pCu.map(c => ({
+          ...c,
+          payments: (() => {
+            try { const p = c.Payments || c.payments || ""; if (!p || p.trim() === "") return []; return JSON.parse(p); }
+            catch(e) { return []; }
+          })()
+        }));
+        setCustomers(parsedCustomers);
+        await dbSaveAll("customers", parsedCustomers, "CellNo");
+      }
+
+      
      if (pRet.length){
   const parsedRet = pRet.map(r => ({
     ...r,
@@ -2795,9 +2842,24 @@ function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, o
   const handleSave = async () => {
     if (!selected || !amount || parseFloat(amount) <= 0) { setMsg("Please select a customer and enter a valid amount."); return; }
     const payment = { date, amount: parseFloat(amount), note: "Received" };
+    // Update React state
     const updated = customers.map(c => c.CellNo === selected.CellNo ? { ...c, payments: [...(c.payments || []), payment] } : c);
     setCustomers(updated);
-    try { const dbC = await dbGet("customers", selected.CellNo); if (dbC) await dbPut("customers", { ...dbC, payments: [...(dbC.payments || []), payment] }); } catch (e) {}
+    // Update IndexedDB
+    try {
+      const dbC = await dbGet("customers", selected.CellNo);
+      if (dbC) {
+        await dbPut("customers", { ...dbC, payments: [...(dbC.payments || []), payment] });
+      }
+    } catch (e) { console.warn("IDB payment save error:", e); }
+    // ✅ Save to Google Sheet
+    await safeCallScript({
+      action: "savePayment",
+      CellNo: selected.CellNo.trim(),
+      date: date,
+      amount: parseFloat(amount),
+      note: "Received"
+    });
     setMsg(`✅ Payment of PKR ${fmt(amount)} saved for ${selected.Name}`);
     setAmount("");
     setTimeout(() => setMsg(""), 3000);
