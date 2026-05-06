@@ -333,6 +333,7 @@ function printReceipt(bill) {
     <div class="tr" style="font-size:10px;color:#555"><span>FBR Charges</span><span>PKR 1.00</span></div>
     <div class="dv"></div><div class="tr gr"><span>GRAND TOTAL</span><span>PKR ${fmt(bill.grandTotal)}</span></div>
     <div class="dv"></div>${payHtml}
+     ${bill.refundApplied > 0 ? `<div class="pr" style="color:#ff8c00"><span>Refund Applied (${bill.refundApplied > 0 ? 'Return #' + (bill.payments?.find(p=>p.type==='refund')?.origReturnNo||'') : ''})</span><span>- PKR ${fmt(bill.refundApplied)}</span></div>` : ""}
     <div class="tr" style="font-weight:bold;margin-top:4px"><span>CHANGE RETURNED</span><span>PKR ${fmt(Math.max(0, bill.change || 0))}</span></div>
     <div class="dv"></div><div class="ft">Thank you for shopping at<br><b>Mart, Bakery & Store!</b></div>
     <div style="text-align:center;font-size:9px;margin-top:3px;color:#555">Designed by itkins.com | 0304-7414437</div>
@@ -978,6 +979,8 @@ export default function App() {
   const handleLogout = () => { setUser(null); setScreen("login"); };
 
   const handleSaleSaved = async (sale, customerInfo) => {
+    const isValidCustomer = customerInfo?.Name && customerInfo.Name !== "Unknown" && customerInfo.Name.trim() !== "" && customerInfo.CellNo && customerInfo.CellNo.trim() !== "";
+
     setSales(prev => [...prev, sale]);
     setBillCounter(prev => prev + 1);
     setItems(prev => prev.map(item => {
@@ -985,11 +988,12 @@ export default function App() {
       if (si) { const ns = Math.max(0, (parseInt(item.Stock) || 0) - (parseInt(si.qty) || 1)); return { ...item, Stock: String(ns) }; }
       return item;
     }));
-   if (customerInfo?.Name && customerInfo.Name !== "Unknown" && customerInfo.Name.trim() !== "" && customerInfo.CellNo) {
+
+    if (isValidCustomer) {
       setCustomers(prev => {
         const existing = prev.find(c => c.CellNo === customerInfo.CellNo);
         if (existing) {
-          const bills = [...new Set([...existing.BillNo.split(",").filter(Boolean), sale.BillNo])].join(",");
+          const bills = [...new Set([...(existing.BillNo || "").split(",").filter(Boolean), sale.BillNo])].join(",");
           const updated = { ...existing, BillNo: bills };
           dbPut("customers", { ...updated, id: existing.CellNo }).catch(() => {});
           return prev.map(c => c.CellNo === customerInfo.CellNo ? updated : c);
@@ -999,6 +1003,7 @@ export default function App() {
         return [...prev, newCust];
       });
     }
+
     try {
       await dbPut("sales", { ...sale, id: sale.BillNo });
       for (const si of (sale.items || [])) {
@@ -1007,13 +1012,13 @@ export default function App() {
       }
     } catch (e) { console.warn("IDB save error:", e); }
 
-    
     await safeCallScript({ action: "saveSale", BillNo: sale.BillNo, Date: sale.Date, Time: sale.Time, Cashier: sale.Cashier, GrandTotal: sale.GrandTotal, Discount: sale.Discount, FBR: 1, PaymentMethod: sale.PaymentMethod, ItemsDetail: JSON.stringify(sale.items || []), CustomerName: customerInfo?.Name || "Unknown", CustomerCell: customerInfo?.CellNo || "", items: sale.items });
-    if (customerInfo?.Name && customerInfo.Name !== "Unknown" && customerInfo.CellNo) {
+    if (isValidCustomer) {
       await safeCallScript({ action: "saveCustomer", Name: customerInfo.Name, CellNo: customerInfo.CellNo, BillNo: sale.BillNo });
     }
   };
 
+  
 const handleReturnSaved = async (ret) => {
   const retWithFlag = { ...ret, usedInBill: false, UsedInBill: "0" };
   setReturns(prev => [...prev, retWithFlag]);
@@ -1376,9 +1381,10 @@ const applyRefund = (refundAmt, returnNo) => {
     const billNo       = String(localCounter).padStart(4, "0");
     const totalDiscount = itemDiscount + billDiscount;
     const customerInfo  = { Name: ab.customerName?.trim() || "Unknown", CellNo: ab.customerCell?.trim() || "" };
-const isKnownCustomer = customerInfo.Name !== "Unknown" && customerInfo.Name !== "" && customerInfo.CellNo !== "";
+    const isKnownCustomer = customerInfo.Name && customerInfo.Name !== "Unknown" && customerInfo.Name.trim() !== "" && customerInfo.CellNo && customerInfo.CellNo.trim() !== "";
     const payMethod = isKnownCustomer ? "Credit" : "Cash";
-    const bill = { billNo, date, time, cashier: user.Name, items: cart, subTotal, totalDiscount, itemDiscount, billDiscount, billDiscountPct: billDiscPct, grandTotal: netTotal, payments: [{ type: "cash", amount: String(netTotal), last4: "" }], change: Math.max(0, parseFloat(ab.cashReceived || 0) - netTotal), customerName: customerInfo.Name, customerCell: customerInfo.CellNo, refundApplied };
+    const bill = { billNo, date, time, cashier: user.Name, items: cart, subTotal, totalDiscount, itemDiscount, billDiscount, billDiscountPct: billDiscPct, grandTotal: netTotal, payments, change: Math.max(0, parseFloat(ab.cashReceived || 0) - netTotal), customerName: customerInfo.Name, customerCell: customerInfo.CellNo, refundApplied };
+    
     onSaleSaved({ BillNo: billNo, Date: date, Time: time, Cashier: user.Name, GrandTotal: netTotal, Discount: totalDiscount, FBR: 1, PaymentMethod: payMethod, ItemsDetail: JSON.stringify(cart), items: cart, CustomerName: customerInfo.Name, CustomerCell: customerInfo.CellNo }, customerInfo);
     setLocalCounter(c => c + 1);
     upd(b => ({ ...b, saved: true, lastBill: bill }));
@@ -2464,14 +2470,17 @@ function CustomersTab({ customers, setCustomers, safeCallScript, sales, currentU
     return true;
   });
 
-  const getCustomerSales = (c) => {
-    const billNos = (c.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
-    return billNos.map(bn => sales?.find(s => s.BillNo === bn)).filter(Boolean);
-  };
 
   const getPending = (c) => {
-    const totalBills = getCustomerSales(c).reduce((s, sale) => s + parseFloat(sale.GrandTotal || 0), 0);
-    const totalPaid  = (c.payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0);
+    const billNos = (c.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
+    const totalBills = billNos.reduce((s, bn) => {
+      const sale = sales.find(sale => sale.BillNo === bn);
+      if (!sale) return s;
+      // Only count Credit sales as pending (Cash bills are paid at counter)
+      if (sale.PaymentMethod === "Credit") return s + parseFloat(sale.GrandTotal || 0);
+      return s; // Cash bills are already paid
+    }, 0);
+    const totalPaid = (c.payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0);
     return Math.max(0, totalBills - totalPaid);
   };
 
@@ -2776,7 +2785,11 @@ function CustomerLedgerModal({ customer, customers, setCustomers, sales, onClose
   const custSales = billNos.map(bn => sales?.find(s => s.BillNo === bn)).filter(Boolean);
 
   // Build ledger rows: bills (debit) + payments (credit)
-  const debitRows  = custSales.map(s => ({ date: s.Date, type: "debit",  billNo: s.BillNo, desc: `Bill #${s.BillNo}`, debit: parseFloat(s.GrandTotal || 0), credit: 0 }));
+// REPLACE WITH:
+  const debitRows  = custSales
+    .filter(s => s.PaymentMethod === "Credit")
+    .map(s => ({ date: s.Date, type: "debit", billNo: s.BillNo, desc: `Bill #${s.BillNo} (Credit)`, debit: parseFloat(s.GrandTotal || 0), credit: 0 }));
+  
   const creditRows = (customer.payments || []).map((p, i) => ({ date: p.date, type: "credit", billNo: null, desc: `Payment Received`, debit: 0, credit: parseFloat(p.amount || 0) }));
   const allRows = [...debitRows, ...creditRows].sort((a, b) => {
     // parse dd/mm/yyyy or yyyy-mm-dd
