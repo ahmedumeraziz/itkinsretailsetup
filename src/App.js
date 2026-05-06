@@ -590,17 +590,23 @@ function saveReturn(ss,data){
 function saveCustomer(ss,data){
   var sh=ss.getSheetByName(SHEET_CUSTOMER);
   if(!sh)return{status:"error",message:"Sheet not found"};
-  var name=(data.Name||"").trim();var cell=(data.CellNo||"").trim();var billNo=(data.BillNo||"").trim();
+  var name=(data.Name||"").trim();
+  var cell=(data.CellNo||"").trim();
+  var billNo=(data.BillNo||"").trim();
   if(!name||!cell)return{status:"error",message:"Name and CellNo required"};
-  var hdrMap=getHeaders(sh);var cellIdx=hdrMap["CellNo"];
+  var hdrMap=getHeaders(sh);
+  var cellIdx=hdrMap["CellNo"];
   if(cellIdx===undefined)return{status:"error",message:"CellNo column not found"};
   var rowNum=findRow(sh,cellIdx,cell);
-  if(rowNum===-1){sh.appendRow([name,cell,billNo]);return{status:"ok"};}
+  if(rowNum===-1){
+    sh.appendRow([name,cell,billNo,""]);
+    return{status:"ok"};
+  }
   var billsIdx=hdrMap["BillNo"];
   if(billsIdx!==undefined){
     var existing=String(sh.getRange(rowNum,billsIdx+1).getValue()||"");
     var bills=existing.split(",").map(function(b){return b.trim();}).filter(Boolean);
-    if(!bills.includes(billNo)){bills.push(billNo);sh.getRange(rowNum,billsIdx+1).setValue(bills.join(","));}
+    if(billNo && !bills.includes(billNo)){bills.push(billNo);sh.getRange(rowNum,billsIdx+1).setValue(bills.join(","));}
   }
   return{status:"ok"};
 }
