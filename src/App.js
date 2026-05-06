@@ -202,7 +202,7 @@ const DEMO_CASHIERS = [
 const DEMO_SALES = [
   { BillNo: "0115", Date: "26/04/2026", Time: "10:15 AM", Cashier: "Rizwan", GrandTotal: "451",  Discount: "0",  FBR: "1", PaymentMethod: "Cash", CustomerName: "Ali Khan",    CustomerCell: "0300-1234567", ItemsDetail: '[{"Barcode":"1001","ItemName":"Pepsi 1.5L","Category":"Beverages","Price":"120","CostPrice":"100","Discount":"0","qty":2},{"Barcode":"1003","ItemName":"Bread Loaf","Category":"Bakery","Price":"90","CostPrice":"70","Discount":"0","qty":2}]' },
   { BillNo: "0116", Date: "26/04/2026", Time: "11:30 AM", Cashier: "Ahmed",  GrandTotal: "1161", Discount: "60", FBR: "1", PaymentMethod: "Card", CustomerName: "Sara Ahmed",  CustomerCell: "0312-9876543", ItemsDetail: '[{"Barcode":"1006","ItemName":"Olpers Milk 1L","Category":"Dairy","Price":"175","CostPrice":"155","Discount":"10","qty":4},{"Barcode":"5428","ItemName":"Macroni Mix-KG","Category":"Grocery","Price":"215","CostPrice":"190","Discount":"5","qty":2}]' },
-  { BillNo: "0117", Date: "25/04/2026", Time: "01:45 PM", Cashier: "Rizwan", GrandTotal: "841",  Discount: "0",  FBR: "1", PaymentMethod: "Cash", CustomerName: "Unknown",     CustomerCell: "",             ItemsDetail: '[{"Barcode":"8964000767221","ItemName":"Treat Platinum Pouch 5pcs","Category":"Dairy","Price":"210","CostPrice":"185","Discount":"0","qty":4}]' },
+  { BillNo: "0117", Date: "25/04/2026", Time: "01:45 PM", Cashier: "Rizwan", GrandTotal: "841",  Discount: "0",  FBR: "1", PaymentMethod: "Cash", CustomerName: "",     CustomerCell: "",             ItemsDetail: '[{"Barcode":"8964000767221","ItemName":"Treat Platinum Pouch 5pcs","Category":"Dairy","Price":"210","CostPrice":"185","Discount":"0","qty":4}]' },
   { BillNo: "0118", Date: "25/04/2026", Time: "02:20 PM", Cashier: "Rizwan", GrandTotal: "331",  Discount: "10", FBR: "1", PaymentMethod: "Cash", CustomerName: "Usman Malik", CustomerCell: "0321-1111111", ItemsDetail: '[{"Barcode":"8964000020364","ItemName":"Shangrila Tomato Ketchup 800G","Category":"Grocery","Price":"340","CostPrice":"300","Discount":"10","qty":1}]' },
   { BillNo: "0119", Date: "24/04/2026", Time: "03:30 PM", Cashier: "Rizwan", GrandTotal: "756",  Discount: "15", FBR: "1", PaymentMethod: "Cash", CustomerName: "Ali Khan",    CustomerCell: "0300-1234567", ItemsDetail: '[{"Barcode":"8964000767221","ItemName":"Treat Platinum Pouch 5pcs","Category":"Dairy","Price":"210","CostPrice":"185","Discount":"0","qty":1},{"Barcode":"5428","ItemName":"Macroni Mix-KG","Category":"Grocery","Price":"215","CostPrice":"190","Discount":"5","qty":1},{"Barcode":"8964000020364","ItemName":"Shangrila Tomato Ketchup 800G","Category":"Grocery","Price":"340","CostPrice":"300","Discount":"10","qty":1}]' },
 ];
@@ -312,7 +312,7 @@ function printReceipt(bill) {
   });
   const billDiscLine = bill.billDiscount > 0 ? `<div class="tr" style="color:#b00"><span>Bill Discount (${bill.billDiscountPct}%)</span><span>- PKR ${fmt(bill.billDiscount)}</span></div>` : "";
   const custName = bill.customerName || ""; const custCell = bill.customerCell || "";
-  const custLine = (custName && custName !== "Unknown") ? `<div class="bi"><span>Customer: ${custName}</span><span>${custCell}</span></div>` : "";
+  const custLine = (custName && custName !== "Unknown" && custName.trim() !== "") ? `<div class="bi"><span>Customer: ${custName}</span><span>${custCell}</span></div>` : "";
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
     *{margin:0;padding:0;box-sizing:border-box}body{font-family:'Courier New',monospace;font-size:12px;width:302px;padding:10px 6px;color:#000;background:#fff}
     .sn{font-size:15px;font-weight:bold;text-align:center;margin-bottom:1px}.dv{border-top:1px dashed #000;margin:5px 0}
@@ -985,11 +985,18 @@ export default function App() {
       if (si) { const ns = Math.max(0, (parseInt(item.Stock) || 0) - (parseInt(si.qty) || 1)); return { ...item, Stock: String(ns) }; }
       return item;
     }));
-    if (customerInfo?.Name && customerInfo.Name !== "Unknown" && customerInfo.CellNo) {
+   if (customerInfo?.Name && customerInfo.Name !== "Unknown" && customerInfo.Name.trim() !== "" && customerInfo.CellNo) {
       setCustomers(prev => {
         const existing = prev.find(c => c.CellNo === customerInfo.CellNo);
-        if (existing) { const bills = [...new Set([...existing.BillNo.split(",").filter(Boolean), sale.BillNo])].join(","); return prev.map(c => c.CellNo === customerInfo.CellNo ? { ...c, BillNo: bills } : c); }
-        return [...prev, { Name: customerInfo.Name, CellNo: customerInfo.CellNo, BillNo: sale.BillNo }];
+        if (existing) {
+          const bills = [...new Set([...existing.BillNo.split(",").filter(Boolean), sale.BillNo])].join(",");
+          const updated = { ...existing, BillNo: bills };
+          dbPut("customers", { ...updated, id: existing.CellNo }).catch(() => {});
+          return prev.map(c => c.CellNo === customerInfo.CellNo ? updated : c);
+        }
+        const newCust = { Name: customerInfo.Name, CellNo: customerInfo.CellNo, BillNo: sale.BillNo, payments: [] };
+        dbPut("customers", { ...newCust, id: customerInfo.CellNo }).catch(() => {});
+        return [...prev, newCust];
       });
     }
     try {
@@ -1194,7 +1201,7 @@ function Calculator({ onClose }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // POS SCREEN
 // ═══════════════════════════════════════════════════════════════════════════════
-function emptyBill(id) { return { id, cart: [], payments: [{ type: "cash", amount: "", last4: "" }], saved: false, lastBill: null, billDiscPct: 0, customerName: "Unknown", customerCell: "" }; }
+function emptyBill(id) { return { id, cart: [], payments: [{ type: "cash", amount: "", last4: "" }], saved: false, lastBill: null, billDiscPct: 0, customerName: "", customerCell: "" }; }
 
 function POSScreen({ user, items, categories, billCounter, onLogout, onSaleSaved, sheetStatus, isOnline, lastSync, onRefresh, searchIndex, itemMap, sales, returns, returnCounter, onReturnSaved, onMarkReturnUsed, customers, setCustomers }) {
   const [bills,        setBills]        = useState([emptyBill(1)]);
@@ -1332,7 +1339,7 @@ function POSScreen({ user, items, categories, billCounter, onLogout, onSaleSaved
   // ── setQty: update quantity for a barcode ──
   const setQty    = (bc, q) => upd(b => ({ ...b, cart: q <= 0 ? b.cart.filter(i => i.Barcode !== bc) : b.cart.map(i => i.Barcode === bc ? { ...i, qty: q } : i) }));
   const delItem   = bc => { upd(b => ({ ...b, cart: b.cart.filter(i => i.Barcode !== bc) })); if (focusedQtyBarcode === bc) { setFocusedQtyBarcode(null); focusSearch(); } };
-  const voidCart  = () => { upd(b => ({ ...b, cart: [], payments: [{ type: "cash", amount: "", last4: "" }], saved: false, billDiscPct: 0, customerName: "Unknown", customerCell: "" })); setFocusedQtyBarcode(null); };
+  const voidCart  = () => { upd(b => ({ ...b, cart: [], payments: [{ type: "cash", amount: "", last4: "" }], saved: false, billDiscPct: 0, customerName: "", customerCell: "" })); setFocusedQtyBarcode(null); };
   const addPay    = () => upd(b => ({ ...b, payments: [...b.payments, { type: "cash", amount: "", last4: "" }] }));
   const updPay    = (i, f, v) => upd(b => ({ ...b, payments: b.payments.map((p, xi) => xi === i ? { ...p, [f]: v } : p) }));
   const delPay    = i => upd(b => ({ ...b, payments: b.payments.filter((_, xi) => xi !== i) }));
@@ -1368,16 +1375,16 @@ const applyRefund = (refundAmt, returnNo) => {
     const { date, time } = getNow();
     const billNo       = String(localCounter).padStart(4, "0");
     const totalDiscount = itemDiscount + billDiscount;
-    const customerInfo  = { Name: ab.customerName || "Unknown", CellNo: ab.customerCell || "" };
-    const isKnownCustomer = customerInfo.Name !== "Unknown" && customerInfo.CellNo !== "";
-    const payMethod = isKnownCustomer ? "Credit" : "Cash";
+    const customerInfo  = { Name: ab.customerName?.trim() || "Unknown", CellNo: ab.customerCell?.trim() || "" };
+const isKnownCustomer = customerInfo.Name !== "Unknown" && customerInfo.Name !== "" && customerInfo.CellNo !== "";
+const payMethod = isKnownCustomer ? "Credit" : "Cash";
     const bill = { billNo, date, time, cashier: user.Name, items: cart, subTotal, totalDiscount, itemDiscount, billDiscount, billDiscountPct: billDiscPct, grandTotal: netTotal, payments: [{ type: "cash", amount: String(netTotal), last4: "" }], change: 0, customerName: customerInfo.Name, customerCell: customerInfo.CellNo, refundApplied };
     onSaleSaved({ BillNo: billNo, Date: date, Time: time, Cashier: user.Name, GrandTotal: netTotal, Discount: totalDiscount, FBR: 1, PaymentMethod: payMethod, ItemsDetail: JSON.stringify(cart), items: cart, CustomerName: customerInfo.Name, CustomerCell: customerInfo.CellNo }, customerInfo);
     setLocalCounter(c => c + 1);
     upd(b => ({ ...b, saved: true, lastBill: bill }));
     printReceipt(bill);
     setFocusedQtyBarcode(null);
-    setTimeout(() => { upd(b => ({ ...b, cart: [], payments: [{ type: "cash", amount: "", last4: "" }], saved: false, billDiscPct: 0, customerName: "Unknown", customerCell: "" })); focusSearch(); }, 2500);
+    setTimeout(() => { upd(b => ({ ...b, cart: [], payments: [{ type: "cash", amount: "", last4: "" }], saved: false, billDiscPct: 0, customerName: "", customerCell: "" })); focusSearch(); }, 2500);
   };
 
   const grouped = {}; cart.forEach(item => { const c = item.Category || "General"; if (!grouped[c]) grouped[c] = []; grouped[c].push(item); });
@@ -1414,7 +1421,7 @@ const applyRefund = (refundAmt, returnNo) => {
               style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px 7px", cursor: "pointer", borderRadius: "8px 8px 0 0", flexShrink: 0, background: isA ? "rgba(0,180,255,0.1)" : "rgba(255,255,255,0.03)", border: `1px solid ${isA ? "rgba(0,180,255,0.3)" : "rgba(255,255,255,0.07)"}`, borderBottom: isA ? "1px solid #0a0e1a" : "1px solid rgba(255,255,255,0.07)", marginBottom: isA ? -1 : 0 }}>
               <span style={{ color: isA ? "#00b4ff" : "rgba(255,255,255,0.45)", fontSize: 12, fontWeight: isA ? 700 : 400 }}>
                 Bill {b.id}
-                {b.customerName && b.customerName !== "Unknown" && <span style={{ color: "#00e5a0", fontSize: 10, marginLeft: 4 }}>· {b.customerName}</span>}
+{b.customerName && b.customerName.trim() !== "" && b.customerName !== "Unknown" && <span style={{ color: "#00e5a0", fontSize: 10, marginLeft: 4 }}>· {b.customerName}</span>}
                 {b.cart.length > 0 && <span style={{ color: "rgba(255,255,255,0.28)", fontSize: 10, marginLeft: 4 }}>({b.cart.length} · PKR {fmt(bT)})</span>}
               </span>
               <span onClick={e => closeBill(b.id, e)} style={{ color: "rgba(255,255,255,0.3)", fontSize: 12, padding: "0 2px", cursor: "pointer" }} onMouseEnter={e => e.target.style.color = "#ff6b6b"} onMouseLeave={e => e.target.style.color = "rgba(255,255,255,0.3)"}>✕</span>
@@ -1607,7 +1614,7 @@ const applyRefund = (refundAmt, returnNo) => {
             onSelectCustomer={(name, cell) => { setCustName(name); setCustCell(cell); }}
             selectedName={ab.customerName}
             selectedCell={ab.customerCell}
-            onClear={() => { setCustName("Unknown"); setCustCell(""); }}
+            onClear={() => { setCustName(""); setCustCell(""); }}
           />
 
           {/* REFUND APPLY */}
@@ -1654,6 +1661,14 @@ function CashierCustomerLedger({ customers, sales, currentBillTotal, onSelectCus
   const [results, setResults]   = useState([]);
   const [selected, setSelected] = useState(null);
 
+  // Sync internal selected state with parent's selectedName
+  useEffect(() => {
+    if (!selectedName || selectedName.trim() === "" || selectedName === "Unknown") {
+      setSelected(null);
+      setQuery("");
+    }
+  }, [selectedName]);
+
   useEffect(() => {
     const q = query.trim().toLowerCase();
     if (!q) { setResults([]); return; }
@@ -1685,7 +1700,7 @@ function CashierCustomerLedger({ customers, sales, currentBillTotal, onSelectCus
     onClear();
   };
 
-  const isSelected = selectedName && selectedName !== "Unknown";
+  const isSelected = selectedName && selectedName.trim() !== "" && selectedName !== "Unknown";
   const selCustomer = isSelected ? (customers.find(c => c.CellNo === selectedCell) || null) : null;
   const pending = selCustomer ? getPending(selCustomer) : 0;
 
@@ -1946,7 +1961,7 @@ function AdminScreen({ user, items, setItems, categories, setCategories, cashier
         {tab === "returns"    && <ReturnsTab    returns={returns} setReturns={setReturns} />}
         {tab === "profit"     && <ProfitTab     sales={sales} items={items} returns={returns} />}
         {tab === "stock"      && <StockTab      items={items} setItems={setItems} safeCallScript={safeCallScript} />}
-        {tab === "customers"  && <CustomersTab  customers={customers} setCustomers={setCustomers} safeCallScript={safeCallScript} sales={sales} />}
+        {tab === "customers"  && <CustomersTab  customers={customers} setCustomers={setCustomers} safeCallScript={safeCallScript} sales={sales} currentUser={user} />}
         {tab === "setup"      && <SetupTab      sheetStatus={sheetStatus} onRefresh={onRefresh} lastSync={lastSync} safeCallScript={safeCallScript} />}
       </div>
     </div>
@@ -2269,10 +2284,17 @@ function CashiersTab({ cashiers, setCashiers, safeCallScript }) {
   const [editing, setEditing] = useState(null); const [origUsername, setOrigUsername] = useState(""); const [form, setForm] = useState({ Name: "", Username: "", PIN: "", Role: "cashier" });
   const startAdd  = () => { setEditing("__new__"); setOrigUsername(""); setForm({ Name: "", Username: "", PIN: "", Role: "cashier" }); };
   const startEdit = c => { setEditing(c.Username); setOrigUsername(c.Username); setForm({ ...c }); };
-  const save = () => {
+  const save = async () => {
     if (!form.Name || !form.Username || !form.PIN) return;
-    if (editing === "__new__") { setCashiers(p => [...p, form]); safeCallScript({ action: "addCashier", ...form }); }
-    else { setCashiers(p => p.map(c => c.Username === origUsername ? form : c)); safeCallScript({ action: "editCashier", ...form, OrigUsername: origUsername }); }
+    if (editing === "__new__") {
+      setCashiers(p => [...p, form]);
+      try { await dbPut("cashiers", { ...form, id: form.Username }); } catch(e) {}
+      safeCallScript({ action: "addCashier", Name: form.Name, Username: form.Username, PIN: form.PIN, Role: form.Role });
+    } else {
+      setCashiers(p => p.map(c => c.Username === origUsername ? form : c));
+      try { await dbPut("cashiers", { ...form, id: form.Username }); } catch(e) {}
+      safeCallScript({ action: "editCashier", Name: form.Name, Username: form.Username, PIN: form.PIN, Role: form.Role, OrigUsername: origUsername });
+    }
     setEditing(null); setOrigUsername("");
   };
   const del = username => { if (window.confirm("Delete this user?")) { setCashiers(p => p.filter(c => c.Username !== username)); safeCallScript({ action: "deleteCashier", Username: username }); } };
@@ -2340,7 +2362,7 @@ function SalesTab({ sales, setSales }) {
               <button className="btn" onClick={() => setViewBill(null)} style={{ padding: "4px 10px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 13, borderRadius: 6 }}>✕ Close</button>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
-              {[["Date", viewBill.Date], ["Time", viewBill.Time], ["Cashier", viewBill.Cashier], ["Payment", viewBill.PaymentMethod], ["Customer", viewBill.CustomerName || "Unknown"], ["Cell #", viewBill.CustomerCell || "—"]].map(([l, v]) => (
+              {[["Date", viewBill.Date], ["Time", viewBill.Time], ["Cashier", viewBill.Cashier], ["Payment", viewBill.PaymentMethod], ["Customer", (viewBill.CustomerName && viewBill.CustomerName !== "Unknown" && viewBill.CustomerName.trim() !== "") ? viewBill.CustomerName : "Walk-in"], ["Cell #", viewBill.CustomerCell || "—"]].map(([l, v]) => (
                 <div key={l} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "8px 12px" }}><div style={{ color: "rgba(0,180,255,0.7)", fontSize: 10, letterSpacing: 1, marginBottom: 2 }}>{l}</div><div style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{v}</div></div>
               ))}
             </div>
@@ -2404,7 +2426,9 @@ function SalesTab({ sales, setSales }) {
               <div style={{ color: "rgba(255,255,255,0.48)", fontSize: 11 }}>{sale.Date}</div>
               <div style={{ color: "rgba(255,255,255,0.48)", fontSize: 11 }}>{sale.Time}</div>
               <div style={{ color: "#fff", fontSize: 12 }}>{sale.Cashier}</div>
-              <div style={{ color: sale.CustomerName && sale.CustomerName !== "Unknown" ? "#00e5a0" : "rgba(255,255,255,0.3)", fontSize: 11 }}>{sale.CustomerName || "Unknown"}</div>
+              <div style={{ color: sale.CustomerName && sale.CustomerName !== "Unknown" && sale.CustomerName.trim() !== "" ? "#00e5a0" : "rgba(255,255,255,0.3)", fontSize: 11 }}>
+  {sale.CustomerName && sale.CustomerName !== "Unknown" && sale.CustomerName.trim() !== "" ? sale.CustomerName : "Walk-in"}
+</div>
               <div style={{ color: "#00e5a0", textAlign: "right", fontWeight: 700, fontSize: 12 }}>{fmt(sale.GrandTotal)}</div>
               <div style={{ color: "#a78bfa", textAlign: "right", fontSize: 11 }}>PKR {fmt(sale.FBR || 1)}</div>
               <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>{sale.PaymentMethod}</div>
@@ -2418,9 +2442,8 @@ function SalesTab({ sales, setSales }) {
   );
 }
 
-
 // ── CUSTOMERS TAB ─────────────────────────────────────────────────────────────
-function CustomersTab({ customers, setCustomers, safeCallScript, sales }) {
+function CustomersTab({ customers, setCustomers, safeCallScript, sales, currentUser }) {
   const [filterName, setFilterName] = useState(""); const [filterCell, setFilterCell] = useState(""); const [filterBill, setFilterBill] = useState("");
   const [showPayModal,  setShowPayModal]  = useState(false);
   const [ledgerCustomer, setLedgerCustomer] = useState(null);
@@ -2441,6 +2464,14 @@ function CustomersTab({ customers, setCustomers, safeCallScript, sales }) {
     const totalBills = getCustomerSales(c).reduce((s, sale) => s + parseFloat(sale.GrandTotal || 0), 0);
     const totalPaid  = (c.payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0);
     return Math.max(0, totalBills - totalPaid);
+  };
+
+  const handleDeleteCustomer = (c, e) => {
+    e.stopPropagation();
+    if (window.confirm(`Delete customer "${c.Name}"? This cannot be undone.`)) {
+      setCustomers(p => p.filter(x => x.CellNo !== c.CellNo));
+      dbDelete("customers", c.CellNo).catch(() => {});
+    }
   };
 
   const exportCSV = () => {
@@ -2467,38 +2498,74 @@ function CustomersTab({ customers, setCustomers, safeCallScript, sales }) {
           <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>Total Pending</div>
         </div>
       </div>
+
       <div style={{ display: "flex", gap: 9, marginBottom: 13, flexWrap: "wrap", alignItems: "center" }}>
         <input value={filterName} onChange={e => setFilterName(e.target.value)} placeholder="Filter by Name..." style={{ ...inSt, maxWidth: 200 }} />
         <input value={filterCell} onChange={e => setFilterCell(e.target.value)} placeholder="Filter by Cell#..." style={{ ...inSt, maxWidth: 180 }} />
         <input value={filterBill} onChange={e => setFilterBill(e.target.value)} placeholder="Filter by Bill#..." style={{ ...inSt, maxWidth: 150 }} />
         <button className="btn" onClick={() => { setFilterName(""); setFilterCell(""); setFilterBill(""); }} style={{ padding: "9px 13px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.45)", borderRadius: 7 }}>Clear</button>
-        <button className="btn" onClick={() => setShowPayModal(true)} style={{ padding: "9px 16px", background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>💰 Receive Payment</button>
+        {currentUser?.Role === "admin" && (
+          <button className="btn" onClick={() => setShowPayModal(true)} style={{ padding: "9px 16px", background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>💰 Receive Payment</button>
+        )}
         <button className="btn" onClick={exportCSV} style={{ marginLeft: "auto", padding: "9px 16px", background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>📥 Export CSV</button>
       </div>
+
       <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 160px 1fr 110px 110px", padding: "8px 14px", background: "rgba(0,180,255,0.07)", color: "rgba(0,180,255,0.72)", fontSize: 10, letterSpacing: 2, fontWeight: 700 }}>
-          <div>NAME</div><div>CELL NUMBER</div><div>BILL NO(S)</div><div style={{ textAlign: "right" }}>TOTAL BILLS</div><div style={{ textAlign: "right" }}>PENDING</div>
+        <div style={{ display: "grid", gridTemplateColumns: currentUser?.Role === "admin" ? "1fr 160px 1fr 110px 110px 70px" : "1fr 160px 1fr 110px 110px", padding: "8px 14px", background: "rgba(0,180,255,0.07)", color: "rgba(0,180,255,0.72)", fontSize: 10, letterSpacing: 2, fontWeight: 700 }}>
+          <div>NAME</div>
+          <div>CELL NUMBER</div>
+          <div>BILL NO(S)</div>
+          <div style={{ textAlign: "right" }}>TOTAL BILLS</div>
+          <div style={{ textAlign: "right" }}>PENDING</div>
+          {currentUser?.Role === "admin" && <div style={{ textAlign: "center" }}>ACTION</div>}
         </div>
+
         <div style={{ maxHeight: 500, overflowY: "auto" }}>
           {filtered.length === 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 140, color: "rgba(255,255,255,0.2)", gap: 8 }}><div style={{ fontSize: 30 }}>👥</div><div style={{ fontSize: 12 }}>No customers found</div></div>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 140, color: "rgba(255,255,255,0.2)", gap: 8 }}>
+              <div style={{ fontSize: 30 }}>👥</div>
+              <div style={{ fontSize: 12 }}>No customers found</div>
+            </div>
           ) : filtered.map((c, i) => {
             const totalBills = getCustomerSales(c).reduce((s, sale) => s + parseFloat(sale.GrandTotal || 0), 0);
             const pending = getPending(c);
             return (
-              <div key={i} onClick={() => setLedgerCustomer(c)} style={{ display: "grid", gridTemplateColumns: "1fr 160px 1fr 110px 110px", padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.035)", alignItems: "center", cursor: "pointer" }}
+              <div key={i} onClick={() => setLedgerCustomer(c)}
+                style={{ display: "grid", gridTemplateColumns: currentUser?.Role === "admin" ? "1fr 160px 1fr 110px 110px 70px" : "1fr 160px 1fr 110px 110px", padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.035)", alignItems: "center", cursor: "pointer" }}
                 onMouseEnter={e => e.currentTarget.style.background = "rgba(0,180,255,0.05)"}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#0062ff,#00b4ff)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{c.Name?.[0]?.toUpperCase() || "?"}</div>
+                  <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#0062ff,#00b4ff)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+                    {c.Name?.[0]?.toUpperCase() || "?"}
+                  </div>
                   <span style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{c.Name || "—"}</span>
                 </div>
+
                 <div style={{ color: "rgba(0,180,255,0.8)", fontSize: 12, fontFamily: "monospace" }}>{c.CellNo || "—"}</div>
+
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                  {(c.BillNo || "").split(",").filter(Boolean).map(b => (<span key={b} style={{ padding: "2px 8px", borderRadius: 12, background: "rgba(0,180,255,0.1)", border: "1px solid rgba(0,180,255,0.2)", color: "#00b4ff", fontSize: 10, fontWeight: 700 }}>#{b.trim()}</span>))}
+                  {(c.BillNo || "").split(",").filter(Boolean).map(b => (
+                    <span key={b} style={{ padding: "2px 8px", borderRadius: 12, background: "rgba(0,180,255,0.1)", border: "1px solid rgba(0,180,255,0.2)", color: "#00b4ff", fontSize: 10, fontWeight: 700 }}>#{b.trim()}</span>
+                  ))}
                 </div>
+
                 <div style={{ textAlign: "right", color: "#00e5a0", fontSize: 12, fontWeight: 700 }}>PKR {fmt(totalBills)}</div>
-                <div style={{ textAlign: "right", color: pending > 0 ? "#ff6b6b" : "#00e5a0", fontSize: 12, fontWeight: 700 }}>{pending > 0 ? `PKR ${fmt(pending)}` : "✓ Paid"}</div>
+
+                <div style={{ textAlign: "right", color: pending > 0 ? "#ff6b6b" : "#00e5a0", fontSize: 12, fontWeight: 700 }}>
+                  {pending > 0 ? `PKR ${fmt(pending)}` : "✓ Paid"}
+                </div>
+
+                {currentUser?.Role === "admin" && (
+                  <div style={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
+                    <button
+                      className="btn"
+                      onClick={e => handleDeleteCustomer(c, e)}
+                      style={{ padding: "4px 10px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 11, borderRadius: 5 }}
+                    >Del</button>
+                  </div>
+                )}
+
               </div>
             );
           })}
@@ -2527,6 +2594,8 @@ function CustomersTab({ customers, setCustomers, safeCallScript, sales }) {
     </div>
   );
 }
+
+
 
 // ─── RECEIVE PAYMENT MODAL ────────────────────────────────────────────────────
 function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, onClose }) {
