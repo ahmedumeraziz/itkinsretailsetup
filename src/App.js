@@ -487,6 +487,7 @@ function markReturnUsed(ss,data){
   return{status:"ok",message:"Marked used: "+data.ReturnNo};
 }
 
+// REPLACE WITH:
 function saveSale(ss,data){
   var salesSh=ss.getSheetByName(SHEET_SALES);
   if(!salesSh)return{status:"error",message:"Sheet not found: "+SHEET_SALES};
@@ -495,6 +496,33 @@ function saveSale(ss,data){
     parseFloat(data.GrandTotal)||0,parseFloat(data.Discount)||0,parseFloat(data.FBR)||1,
     data.PaymentMethod||"",data.ItemsDetail||"[]",data.CustomerName||"Unknown",data.CustomerCell||""
   ]);
+  // Auto-save customer if Credit sale with valid customer info
+  var custName=(data.CustomerName||"").trim();
+  var custCell=(data.CustomerCell||"").trim();
+  if(custName && custName!=="Unknown" && custCell && data.PaymentMethod==="Credit"){
+    var custSh=ss.getSheetByName(SHEET_CUSTOMER);
+    if(custSh){
+      var hdrMap=getHeaders(custSh);
+      var cellIdx=hdrMap["CellNo"];
+      if(cellIdx!==undefined){
+        var rowNum=findRow(custSh,cellIdx,custCell);
+        if(rowNum===-1){
+          custSh.appendRow([custName,custCell,data.BillNo||""]);
+        } else {
+          var billsIdx=hdrMap["BillNo"];
+          if(billsIdx!==undefined){
+            var existing=String(custSh.getRange(rowNum,billsIdx+1).getValue()||"");
+            var bills=existing.split(",").map(function(b){return b.trim();}).filter(Boolean);
+            if(!bills.includes(String(data.BillNo||""))){
+              bills.push(String(data.BillNo||""));
+              custSh.getRange(rowNum,billsIdx+1).setValue(bills.join(","));
+            }
+          }
+        }
+      }
+    }
+  }
+
   var itemsSh=ss.getSheetByName(SHEET_ITEMS);
   var stockLogSh=ss.getSheetByName(SHEET_STOCKLOG);
   if(itemsSh&&data.items&&data.items.length>0){
@@ -978,8 +1006,18 @@ export default function App() {
   const handleLogin  = u => { setUser(u); setScreen(u.Role === "admin" ? "admin" : "pos"); };
   const handleLogout = () => { setUser(null); setScreen("login"); };
 
+  // REPLACE WITH:
   const handleSaleSaved = async (sale, customerInfo) => {
-    const isValidCustomer = customerInfo?.Name && customerInfo.Name !== "Unknown" && customerInfo.Name.trim() !== "" && customerInfo.CellNo && customerInfo.CellNo.trim() !== "";
+    const isValidCustomer = !!(
+      customerInfo &&
+      customerInfo.Name &&
+      customerInfo.Name.trim() !== "" &&
+      customerInfo.Name.trim() !== "Unknown" &&
+      customerInfo.CellNo &&
+      customerInfo.CellNo.trim() !== ""
+    );
+
+    console.log("💾 handleSaleSaved | isValidCustomer:", isValidCustomer, "| customer:", customerInfo?.Name, customerInfo?.CellNo, "| payMethod:", sale.PaymentMethod || "N/A");
 
     setSales(prev => [...prev, sale]);
     setBillCounter(prev => prev + 1);
@@ -1012,9 +1050,33 @@ export default function App() {
       }
     } catch (e) { console.warn("IDB save error:", e); }
 
-    await safeCallScript({ action: "saveSale", BillNo: sale.BillNo, Date: sale.Date, Time: sale.Time, Cashier: sale.Cashier, GrandTotal: sale.GrandTotal, Discount: sale.Discount, FBR: 1, PaymentMethod: sale.PaymentMethod, ItemsDetail: JSON.stringify(sale.items || []), CustomerName: customerInfo?.Name || "Unknown", CustomerCell: customerInfo?.CellNo || "", items: sale.items });
+    // REPLACE WITH:
+    const scriptPayload = {
+      action: "saveSale",
+      BillNo: sale.BillNo,
+      Date: sale.Date,
+      Time: sale.Time,
+      Cashier: sale.Cashier,
+      GrandTotal: sale.GrandTotal,
+      Discount: sale.Discount,
+      FBR: 1,
+      PaymentMethod: sale.PaymentMethod || "Cash",
+      ItemsDetail: JSON.stringify(sale.items || []),
+      CustomerName: isValidCustomer ? customerInfo.Name : "Unknown",
+      CustomerCell: isValidCustomer ? customerInfo.CellNo : "",
+      items: sale.items
+    };
+    await safeCallScript(scriptPayload);
+
+    // Always call saveCustomer separately for Credit sales
     if (isValidCustomer) {
-      await safeCallScript({ action: "saveCustomer", Name: customerInfo.Name, CellNo: customerInfo.CellNo, BillNo: sale.BillNo });
+      console.log("📤 Sending saveCustomer for:", customerInfo.Name, customerInfo.CellNo, "Bill:", sale.BillNo);
+      await safeCallScript({
+        action: "saveCustomer",
+        Name: customerInfo.Name.trim(),
+        CellNo: customerInfo.CellNo.trim(),
+        BillNo: sale.BillNo
+      });
     }
   };
 
@@ -1385,7 +1447,16 @@ const applyRefund = (refundAmt, returnNo) => {
     const payMethod = isKnownCustomer ? "Credit" : "Cash";
     const bill = { billNo, date, time, cashier: user.Name, items: cart, subTotal, totalDiscount, itemDiscount, billDiscount, billDiscountPct: billDiscPct, grandTotal: netTotal, payments, change: Math.max(0, parseFloat(ab.cashReceived || 0) - netTotal), customerName: customerInfo.Name, customerCell: customerInfo.CellNo, refundApplied };
     
-    onSaleSaved({ BillNo: billNo, Date: date, Time: time, Cashier: user.Name, GrandTotal: netTotal, Discount: totalDiscount, FBR: 1, PaymentMethod: payMethod, ItemsDetail: JSON.stringify(cart), items: cart, CustomerName: customerInfo.Name, CustomerCell: customerInfo.CellNo }, customerInfo);
+    // REPLACE WITH:
+    onSaleSaved({
+      BillNo: billNo, Date: date, Time: time, Cashier: user.Name,
+      GrandTotal: netTotal, Discount: totalDiscount, FBR: 1,
+      PaymentMethod: payMethod,
+      ItemsDetail: JSON.stringify(cart),
+      items: cart,
+      CustomerName: isKnownCustomer ? customerInfo.Name : "Unknown",
+      CustomerCell: isKnownCustomer ? customerInfo.CellNo : ""
+    }, isKnownCustomer ? customerInfo : { Name: "Unknown", CellNo: "" });
     setLocalCounter(c => c + 1);
     upd(b => ({ ...b, saved: true, lastBill: bill }));
     printReceipt(bill);
