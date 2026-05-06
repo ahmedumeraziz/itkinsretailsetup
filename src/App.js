@@ -859,14 +859,6 @@ function manualBackup() {
   console.log("✅ Manual backup completed.");
 }
 
-// ── CHECK EXISTING TRIGGERS ───────────────────────────────────
-function listTriggers() {
-  var triggers = ScriptApp.getProjectTriggers();
-  triggers.forEach(function(t) {
-    console.log("Trigger: " + t.getHandlerFunction() + " | Type: " + t.getEventType());
-  });
-  if (triggers.length === 0) console.log("No triggers found.");
-}
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2640,15 +2632,6 @@ const getTotalReceived = (c) => {
     .reduce((s, p) => s + parseFloat(p.amount || 0), 0);
 };
   
-  {editingCustomer && (
-  <EditCustomerModal
-    customer={editingCustomer}
-    customers={customers}
-    setCustomers={setCustomers}
-    safeCallScript={safeCallScript}
-    onClose={() => setEditingCustomer(null)}
-  />
-)}
   
   const handleDeleteCustomer = (c, e) => {
     e.stopPropagation();
@@ -2721,28 +2704,7 @@ const getTotalReceived = (c) => {
   </button>
 </div>
 
-        <input value={filterCell} onChange={e => setFilterCell(e.target.value)} placeholder="Filter by Cell#..." style={{ ...inSt, maxWidth: 180 }} />
-        <input value={filterBill} onChange={e => setFilterBill(e.target.value)} placeholder="Filter by Bill#..." style={{ ...inSt, maxWidth: 150 }} />
-        <button className="btn" onClick={() => { setFilterName(""); setFilterCell(""); setFilterBill(""); }}
-          style={{ padding: "9px 13px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.45)", borderRadius: 7 }}>
-          Clear
-        </button>
-        <button className="btn" onClick={() => setShowAddCustomer(true)}
-          style={{ padding: "9px 16px", background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>
-          + Add Customer
-        </button>
-        {currentUser?.Role === "admin" && (
-          <button className="btn" onClick={() => setShowPayModal(true)}
-            style={{ padding: "9px 16px", background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>
-            💰 Receive Payment
-          </button>
-        )}
-        <button className="btn" onClick={exportCSV}
-          style={{ marginLeft: "auto", padding: "9px 16px", background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>
-          📥 Export CSV
-        </button>
-      </div>
-
+        
       {/* CUSTOMERS TABLE */}
       <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
         <div style={{ display: "grid", gridTemplateColumns: currentUser?.Role === "admin" ? "1fr 160px 1fr 110px 110px 70px" : "1fr 160px 1fr 110px 110px", padding: "8px 14px", background: "rgba(0,180,255,0.07)", color: "rgba(0,180,255,0.72)", fontSize: 10, letterSpacing: 2, fontWeight: 700 }}>
@@ -2828,7 +2790,7 @@ const getTotalReceived = (c) => {
         />
       )}
 
-      {ledgerCustomer && (
+    {ledgerCustomer && (
         <CustomerLedgerModal
           customer={ledgerCustomer}
           customers={customers}
@@ -2837,28 +2799,35 @@ const getTotalReceived = (c) => {
           onClose={() => setLedgerCustomer(null)}
         />
       )}
+
+      {editingCustomer && (
+        <EditCustomerModal
+          customer={editingCustomer}
+          customers={customers}
+          setCustomers={setCustomers}
+          safeCallScript={safeCallScript}
+          onClose={() => setEditingCustomer(null)}
+        />
+      )}
     </div>
   );
 }
 
 // ─── ADD CUSTOMER MODAL ───────────────────────────────────────────────────────
-function EditCustomerModal({ customer, customers, setCustomers, safeCallScript, onClose }) {
-  const [name, setName] = useState(customer.Name || "");
-  const [cell, setCell] = useState(customer.CellNo || "");
+function AddCustomerModal({ customers, setCustomers, safeCallScript, onClose }) {
+  const [name, setName] = useState("");
+  const [cell, setCell] = useState("");
   const [msg,  setMsg]  = useState("");
 
   const handleSave = async () => {
     if (!name.trim() || !cell.trim()) { setMsg("Name and Cell# are required."); return; }
-    if (cell !== customer.CellNo && customers.find(c => c.CellNo === cell.trim())) {
-      setMsg("Another customer with this cell# already exists."); return;
+    if (customers.find(c => c.CellNo === cell.trim())) {
+      setMsg("A customer with this cell# already exists."); return;
     }
-    const updated = { ...customer, Name: name.trim(), CellNo: cell.trim() };
-    setCustomers(p => p.map(c => c.CellNo === customer.CellNo ? updated : c));
-    try {
-      await dbDelete("customers", customer.CellNo);
-      await dbPut("customers", { ...updated, id: cell.trim() });
-    } catch(e) {}
-    await safeCallScript({ action: "saveCustomer", Name: name.trim(), CellNo: cell.trim(), BillNo: customer.BillNo || "" });
+    const newCust = { Name: name.trim(), CellNo: cell.trim(), BillNo: "", payments: [] };
+    setCustomers(p => [...p, newCust]);
+    try { await dbPut("customers", { ...newCust, id: cell.trim() }); } catch(e) {}
+    await safeCallScript({ action: "saveCustomer", Name: name.trim(), CellNo: cell.trim(), BillNo: "" });
     onClose();
   };
 
@@ -2866,19 +2835,20 @@ function EditCustomerModal({ customer, customers, setCustomers, safeCallScript, 
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ background: "#0c1828", border: "1px solid rgba(0,180,255,0.3)", borderRadius: 14, padding: 24, width: 380, maxWidth: "95vw" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-          <div style={{ color: "#00b4ff", fontSize: 14, fontWeight: 700 }}>✏️ Edit Customer</div>
+          <div style={{ color: "#00b4ff", fontSize: 14, fontWeight: 700 }}>➕ Add New Customer</div>
           <button className="btn" onClick={onClose} style={{ width: 28, height: 28, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", borderRadius: 6, fontSize: 14 }}>✕</button>
         </div>
         <div style={{ marginBottom: 12 }}>
           <label style={lbSt}>FULL NAME</label>
-          <input value={name} onChange={e => setName(e.target.value)} style={{ ...inSt }} />
+          <input value={name} onChange={e => setName(e.target.value)} style={{ ...inSt }} placeholder="Customer name..." />
         </div>
         <div style={{ marginBottom: 14 }}>
           <label style={lbSt}>CELL NUMBER</label>
-          <input value={cell} onChange={e => setCell(e.target.value)} style={{ ...inSt }} onKeyDown={e => e.key === "Enter" && handleSave()} />
+          <input value={cell} onChange={e => setCell(e.target.value)} style={{ ...inSt }} placeholder="e.g. 0300-1234567"
+            onKeyDown={e => e.key === "Enter" && handleSave()} />
         </div>
         {msg && <div style={{ marginBottom: 12, color: "#ff6b6b", fontSize: 12 }}>{msg}</div>}
-        <button className="btn" onClick={handleSave} style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>💾 Save Changes</button>
+        <button className="btn" onClick={handleSave} style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>💾 Save Customer</button>
       </div>
     </div>
   );
