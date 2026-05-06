@@ -1271,6 +1271,1032 @@ function POSScreen({ user, items, categories, billCounter, onLogout, onSaleSaved
   );
 }
 
+// ==================== StatusBar ====================
+        
+function StatusBar({ isOnline, sheetStatus, lastSync, onRefresh }) {
+  const syncLabel = lastSync ? lastSync.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }) : "Not synced";
+  const statusColor = sheetStatus === "loaded" ? "#00e080" : sheetStatus === "cached" ? "#00b4ff" : sheetStatus === "error" ? "#ff6b6b" : "#ffd700";
+  const statusText  = sheetStatus === "loaded" ? `${syncLabel}` : sheetStatus === "cached" ? "Cached" : sheetStatus === "error" ? "Error · Retry" : sheetStatus === "syncing" ? "Syncing..." : "Demo";
+  const statusIcon  = sheetStatus === "loaded" ? "✓" : sheetStatus === "cached" ? "💾" : sheetStatus === "error" ? "⚠" : sheetStatus === "syncing" ? "⟳" : "◉";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div title={isOnline ? "Online" : "Offline"} style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 20, fontSize: 10, fontWeight: 700, background: isOnline ? "rgba(0,200,0,0.12)" : "rgba(255,80,80,0.12)", border: `1px solid ${isOnline ? "rgba(0,200,0,0.35)" : "rgba(255,80,80,0.35)"}`, color: isOnline ? "#00e080" : "#ff6b6b", whiteSpace: "nowrap" }}>
+        <span style={{ width: 6, height: 6, borderRadius: "50%", background: isOnline ? "#00e080" : "#ff6b6b", display: "inline-block", boxShadow: isOnline ? "0 0 6px #00e080" : "none" }} />
+        {isOnline ? "Online" : "Offline"}
+      </div>
+      <div onClick={onRefresh} title="Click to sync" style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 20, fontSize: 10, fontWeight: 700, cursor: "pointer", background: `rgba(${sheetStatus === "loaded" ? "0,160,0" : sheetStatus === "error" ? "255,80,80" : "255,200,0"},0.15)`, border: `1px solid ${statusColor}66`, color: statusColor, whiteSpace: "nowrap" }}>
+        <span style={{ fontSize: 11 }}>{statusIcon}</span>{statusText}<span style={{ opacity: 0.5, fontSize: 9, marginLeft: 2 }}>↻</span>
+      </div>
+    </div>
+  );
+}
+
+// ==================== Calculator ====================
+
+function Calculator({ onClose }) {
+  const [disp, setDisp] = useState("0"); const [prev, setPrev] = useState(null); const [op, setOp] = useState(null); const [fresh, setFresh] = useState(true);
+  const [pos, setPos] = useState({ x: null, y: null }); const dragging = useRef(false); const dragOffset = useRef({ dx: 0, dy: 0 }); const calcRef = useRef();
+  useEffect(() => {
+    const handler = e => {
+      const k = e.key;
+      if (k >= "0" && k <= "9") { e.preventDefault(); press(k); }
+      else if (k === "." || k === ",") { e.preventDefault(); press("."); }
+      else if (k === "+" || k === "-") { e.preventDefault(); press(k); }
+      else if (k === "*") { e.preventDefault(); press("×"); }
+      else if (k === "/") { e.preventDefault(); press("÷"); }
+      else if (k === "Enter" || k === "=") { e.preventDefault(); press("="); }
+      else if (k === "Backspace") { e.preventDefault(); press("⌫"); }
+      else if (k === "Escape") { onClose(); }
+      else if (k === "c" || k === "C") { e.preventDefault(); press("C"); }
+    };
+    window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+  const press = v => {
+    if (v === "C") { setDisp("0"); setPrev(null); setOp(null); setFresh(true); return; }
+    if (v === "⌫") { setDisp(d => d.length > 1 ? d.slice(0, -1) : "0"); return; }
+    if (["+", "-", "×", "÷"].includes(v)) { setPrev(parseFloat(disp)); setOp(v); setFresh(true); return; }
+    if (v === "=") { if (prev != null && op) { const a = prev, b = parseFloat(disp); let r = op === "+" ? a + b : op === "-" ? a - b : op === "×" ? a * b : b !== 0 ? a / b : 0; setDisp(String(parseFloat(r.toFixed(6)))); setPrev(null); setOp(null); setFresh(true); } return; }
+    if (v === ".") { if (!disp.includes(".")) { setDisp(d => (fresh ? "0" : d) + "."); setFresh(false); } return; }
+    setDisp(d => fresh ? v : (d === "0" ? v : d + v)); setFresh(false);
+  };
+  const onMouseDown = e => { if (e.target.closest("button")) return; dragging.current = true; const rect = calcRef.current.getBoundingClientRect(); dragOffset.current = { dx: e.clientX - rect.left, dy: e.clientY - rect.top }; e.preventDefault(); };
+  useEffect(() => { const move = e => { if (!dragging.current) return; setPos({ x: e.clientX - dragOffset.current.dx, y: e.clientY - dragOffset.current.dy }); }; const up = () => { dragging.current = false; }; window.addEventListener("mousemove", move); window.addEventListener("mouseup", up); return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); }; }, []);
+  const rows = [["7", "8", "9", "÷"], ["4", "5", "6", "×"], ["1", "2", "3", "-"], ["C", "0", ".", "+"], ["⌫", "", "", "="]];
+  const style = pos.x !== null ? { position: "fixed", left: pos.x, top: pos.y, zIndex: 3000 } : { position: "fixed", bottom: 80, right: 20, zIndex: 3000 };
+  return (
+    <div ref={calcRef} style={{ ...style, background: "#0d1b2a", border: "1px solid rgba(0,180,255,0.3)", borderRadius: 14, padding: 14, boxShadow: "0 8px 40px rgba(0,0,0,0.7)", width: 228, userSelect: "none" }}>
+      <div onMouseDown={onMouseDown} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, cursor: "grab" }}>
+        <div style={{ color: "#00b4ff", fontFamily: "Orbitron", fontSize: 11, fontWeight: 700 }}>🧮 CALCULATOR</div>
+        <button className="btn" onClick={onClose} style={{ background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 14, padding: "2px 8px", borderRadius: 5 }}>✕</button>
+      </div>
+      <div style={{ background: "rgba(0,0,0,0.45)", borderRadius: 8, padding: "10px 12px", marginBottom: 10, textAlign: "right" }}>
+        {op && <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 11 }}>{prev} {op}</div>}
+        <div style={{ color: "#fff", fontSize: 26, fontWeight: 700, fontFamily: "Orbitron", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{disp}</div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 5 }}>
+        {rows.flat().map((k, i) => (k === "" ? <div key={i} /> : <button key={i} onClick={() => press(k)} style={{ padding: "11px 0", background: k === "=" ? "linear-gradient(135deg,#0062ff,#00b4ff)" : ["÷", "×", "-", "+"].includes(k) ? "rgba(0,180,255,0.18)" : k === "C" ? "rgba(255,80,80,0.18)" : k === "⌫" ? "rgba(255,150,0,0.15)" : "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.1)", color: k === "=" ? "#fff" : k === "C" ? "#ff6b6b" : "#fff", fontSize: 14, fontWeight: 700, borderRadius: 6, cursor: "pointer" }}>{k}</button>))}
+      </div>
+    </div>
+  );
+}
+
+// ==================== CashierCustomerLedger ====================
+
+function CashierCustomerLedger({ customers, sales, currentBillTotal, onSelectCustomer, selectedName, selectedCell, onClear }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [selected, setSelected] = useState(null);
+
+  useEffect(() => {
+    if (!selectedName || selectedName.trim() === "" || selectedName === "Unknown") {
+      setSelected(null);
+      setQuery("");
+    }
+  }, [selectedName]);
+
+  useEffect(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) { setResults([]); return; }
+    setResults(customers.filter(c => c.Name?.toLowerCase().includes(q) || c.CellNo?.includes(q)).slice(0, 6));
+  }, [query, customers]);
+
+  const getPending = (c) => {
+    const billNos = (c.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
+    const totalBills = billNos.reduce((s, bn) => {
+      const sale = sales.find(s => s.BillNo === bn);
+      return s + parseFloat(sale?.GrandTotal || 0);
+    }, 0);
+    const totalPaid = (c.payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0);
+    return Math.max(0, totalBills - totalPaid);
+  };
+
+  const handleSelect = (c) => {
+    setSelected(c);
+    setQuery("");
+    setResults([]);
+    onSelectCustomer(c.Name, c.CellNo);
+  };
+
+  const handleClear = () => {
+    setSelected(null);
+    onClear();
+  };
+
+  const isSelected = selectedName && selectedName.trim() !== "" && selectedName !== "Unknown";
+  const selCustomer = isSelected ? (customers.find(c => c.CellNo === selectedCell) || null) : null;
+  const pending = selCustomer ? getPending(selCustomer) : 0;
+
+  return (
+    <div style={{ background: "rgba(0,180,255,0.05)", border: "1px solid rgba(0,180,255,0.18)", borderRadius: 10, padding: "10px 12px" }}>
+      <div style={{ color: "rgba(0,180,255,0.8)", fontSize: 10, letterSpacing: 2, fontWeight: 700, marginBottom: 8 }}>👤 CUSTOMER LEDGER</div>
+      {!isSelected ? (
+        <div style={{ position: "relative" }}>
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by name or cell number..." style={{ ...inSt, padding: "7px 11px", fontSize: 12, border: "1px solid rgba(0,180,255,0.2)", width: "100%" }} />
+          {results.length > 0 && (
+            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#0c1828", border: "1px solid rgba(0,180,255,0.28)", borderRadius: 8, zIndex: 200, boxShadow: "0 8px 30px rgba(0,0,0,0.6)" }}>
+              {results.map((c, i) => {
+                const p = getPending(c);
+                return (
+                  <div key={i} onClick={() => handleSelect(c)} style={{ padding: "9px 12px", cursor: "pointer", borderBottom: "1px solid rgba(255,255,255,0.04)", display: "flex", justifyContent: "space-between", alignItems: "center" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "rgba(0,180,255,0.1)"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <div>
+                      <div style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>{c.Name}</div>
+                      <div style={{ color: "rgba(0,180,255,0.7)", fontSize: 10, fontFamily: "monospace" }}>{c.CellNo}</div>
+                    </div>
+                    {p > 0 && <span style={{ color: "#ff6b6b", fontSize: 11, fontWeight: 700 }}>Pending: PKR {fmt(p)}</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div>
+              <div style={{ color: "#fff", fontWeight: 700, fontSize: 13 }}>{selectedName}</div>
+              <div style={{ color: "rgba(0,180,255,0.7)", fontSize: 11, fontFamily: "monospace" }}>{selectedCell}</div>
+            </div>
+            <button className="btn" onClick={handleClear} style={{ padding: "4px 9px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 11, borderRadius: 5 }}>✕</button>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            {pending > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", background: "rgba(255,80,80,0.07)", border: "1px solid rgba(255,80,80,0.2)", borderRadius: 7, padding: "6px 10px" }}>
+                <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 11 }}>Previous Pending</span>
+                <span style={{ color: "#ff6b6b", fontWeight: 700, fontSize: 13 }}>PKR {fmt(pending)}</span>
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "space-between", background: "rgba(0,180,255,0.06)", border: "1px solid rgba(0,180,255,0.15)", borderRadius: 7, padding: "6px 10px" }}>
+              <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 11 }}>Today's Purchase</span>
+              <span style={{ color: "#00b4ff", fontWeight: 700, fontSize: 13 }}>PKR {fmt(currentBillTotal)}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", background: "rgba(0,229,160,0.07)", border: "1px solid rgba(0,229,160,0.2)", borderRadius: 7, padding: "6px 10px" }}>
+              <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 11 }}>Total After Bill</span>
+              <span style={{ color: "#00e5a0", fontWeight: 800, fontSize: 14 }}>PKR {fmt(pending + currentBillTotal)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ==================== RefundApplyPanel ====================
+function RefundApplyPanel({ returns, onApply, appliedPayments }) {
+  const [returnNo, setReturnNo] = useState("");
+  const [found, setFound] = useState(null);
+  const [msg, setMsg] = useState("");
+
+  const alreadyApplied = found && (found.usedInBill === true || found.UsedInBill === "1" || found.UsedInBill === "true" || appliedPayments.some(p => p.type === "refund" && p.origReturnNo === found.ReturnNo));
+
+  const lookup = () => {
+    const q = returnNo.trim().toUpperCase();
+    const match = returns.find(r => r.ReturnNo?.toUpperCase() === q || r.ReturnNo?.toUpperCase() === "R" + q.replace(/\D/g, "").padStart(4, "0") || r.ReturnNo?.replace(/\D/g, "") === q.replace(/\D/g, ""));
+    if (match) { setFound(match); setMsg(""); }
+    else { setFound(null); setMsg("Return not found"); }
+  };
+
+  const apply = () => {
+    if (!found || alreadyApplied) return;
+    onApply(parseFloat(found.RefundAmount), found.ReturnNo);
+    setReturnNo(""); setFound(null);
+    setMsg("✅ Refund applied");
+    setTimeout(() => setMsg(""), 3000);
+  };
+
+  return (
+    <div style={{ background: "rgba(255,150,0,0.05)", border: "1px solid rgba(255,150,0,0.2)", borderRadius: 10, padding: "10px 12px" }}>
+      <div style={{ color: "#ff9500", fontSize: 10, letterSpacing: 2, fontWeight: 700, marginBottom: 8 }}>↩ APPLY REFUND TO THIS BILL</div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 7 }}>
+        <input value={returnNo} onChange={e => { setReturnNo(e.target.value); setFound(null); setMsg(""); }} onKeyDown={e => e.key === "Enter" && lookup()} placeholder="Return # (e.g. R0002)" style={{ ...inSt, flex: 1, padding: "6px 10px", fontSize: 12, border: "1px solid rgba(255,150,0,0.3)" }} />
+        <button className="btn" onClick={lookup} style={{ padding: "6px 11px", background: "rgba(255,150,0,0.15)", border: "1px solid rgba(255,150,0,0.3)", color: "#ff9500", fontSize: 12, borderRadius: 6 }}>Find</button>
+      </div>
+      {msg && <div style={{ fontSize: 11, color: msg.startsWith("✅") ? "#00e5a0" : "#ff6b6b", marginBottom: 6 }}>{msg}</div>}
+      {found && !alreadyApplied && (
+        <div style={{ background: "rgba(255,150,0,0.06)", border: "1px solid rgba(255,150,0,0.2)", borderRadius: 7, padding: "8px 10px" }}>
+          <div style={{ color: "#fff", fontSize: 11, marginBottom: 8 }}>{found.ReturnNo} — {found.Date} — Orig Bill #{found.OrigBillNo}</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span style={{ color: "rgba(255,255,255,0.5)", fontSize: 11 }}>Refund Amount</span>
+            <span style={{ color: "#ff9500", fontWeight: 700, fontSize: 15 }}>PKR {fmt(found.RefundAmount)}</span>
+          </div>
+          <button className="btn" onClick={apply} style={{ width: "100%", padding: "7px", background: "linear-gradient(135deg,#ff6b00,#ff9500)", color: "#fff", fontSize: 12, borderRadius: 6, fontWeight: 700 }}>↩ Apply Refund to Bill</button>
+        </div>
+      )}
+      {alreadyApplied && <div style={{ fontSize: 11, color: "#ff6b6b", padding: "7px 10px", background: "rgba(255,80,80,0.07)", border: "1px solid rgba(255,80,80,0.2)", borderRadius: 6 }}>⛔ Return {found?.ReturnNo} has already been used in a bill.</div>}
+    </div>
+  );
+}
+
+// ==================== ReturnModal ====================
+
+function ReturnModal({ user, sales, items, returnCounter, onReturnSaved, onClose }) {
+  const [step, setStep] = useState(1);
+  const [billNo, setBillNo] = useState("");
+  const [foundSale, setFoundSale] = useState(null);
+  const [saleItems, setSaleItems] = useState([]);
+  const [returnQtys, setReturnQtys] = useState({});
+  const [reason, setReason] = useState("Customer Return");
+  const [msg, setMsg] = useState("");
+
+  const findBill = () => {
+    const s = sales.find(s => s.BillNo === billNo.trim().padStart(4, "0") || s.BillNo === billNo.trim());
+    if (!s) { setMsg("Bill not found"); return; }
+    const si = safeParseItems(s.ItemsDetail);
+    setFoundSale(s); setSaleItems(si);
+    const qtys = {}; si.forEach(i => { qtys[i.Barcode] = 0; });
+    setReturnQtys(qtys); setStep(2); setMsg("");
+  };
+
+  const setRQ = (bc, v) => setReturnQtys(p => ({ ...p, [bc]: Math.max(0, Math.min(parseInt(v) || 0, saleItems.find(i => i.Barcode === bc)?.qty || 0)) }));
+
+  const refundAmt = saleItems.reduce((s, i) => {
+    const qty = returnQtys[i.Barcode] || 0;
+    const disc = parseFloat(i.Discount || 0);
+    return s + qty * (parseFloat(i.Price || 0) - disc);
+  }, 0);
+
+  const returnedItems = saleItems.filter(i => (returnQtys[i.Barcode] || 0) > 0).map(i => ({ ...i, qty: returnQtys[i.Barcode] }));
+
+  const confirmReturn = () => {
+    if (returnedItems.length === 0) { setMsg("Select at least one item to return"); return; }
+    const { date, time } = getNow();
+    const ReturnNo = "R" + String(returnCounter).padStart(4, "0");
+    const ret = { ReturnNo, OrigBillNo: foundSale.BillNo, Date: date, Time: time, Cashier: user.Name, Items: JSON.stringify(returnedItems), RefundAmount: refundAmt, Reason: reason };
+    onReturnSaved(ret);
+    printReturnReceipt(ret);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 600, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#0d1b2a", border: "1px solid rgba(255,150,0,0.35)", borderRadius: 14, padding: 24, maxWidth: 560, width: "100%", maxHeight: "88vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <div style={{ fontFamily: "Orbitron", color: "#ff9500", fontSize: 15 }}>↩ RETURN / REFUND</div>
+          <button className="btn" onClick={onClose} style={{ padding: "4px 10px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 13, borderRadius: 6 }}>✕</button>
+        </div>
+
+        {step === 1 && (
+          <div>
+            <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 12, marginBottom: 12 }}>Enter the original bill number to process a return.</div>
+            <div style={{ display: "flex", gap: 9 }}>
+              <input value={billNo} onChange={e => setBillNo(e.target.value)} onKeyDown={e => e.key === "Enter" && findBill()} placeholder="Bill Number (e.g. 0115)" style={{ ...inSt, flex: 1 }} autoFocus />
+              <button className="btn" onClick={findBill} style={{ padding: "9px 18px", background: "linear-gradient(135deg,#ff6b00,#ff9500)", color: "#fff", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>Find Bill</button>
+            </div>
+            {msg && <div style={{ color: "#ff6b6b", fontSize: 12, marginTop: 8 }}>{msg}</div>}
+          </div>
+        )}
+
+        {step === 2 && foundSale && (
+          <div>
+            <div style={{ background: "rgba(255,150,0,0.06)", border: "1px solid rgba(255,150,0,0.2)", borderRadius: 9, padding: "10px 14px", marginBottom: 16 }}>
+              <div style={{ color: "#ff9500", fontSize: 12, fontWeight: 700 }}>Bill #{foundSale.BillNo} — {foundSale.Date} — {foundSale.Cashier}</div>
+              <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 11 }}>Customer: {foundSale.CustomerName || "Unknown"} · Total: PKR {fmt(foundSale.GrandTotal)}</div>
+            </div>
+            <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 11, marginBottom: 10 }}>Select items and quantities to return:</div>
+            {saleItems.map(item => (
+              <div key={item.Barcode} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", background: "rgba(255,255,255,0.025)", border: `1px solid ${(returnQtys[item.Barcode] || 0) > 0 ? "rgba(255,150,0,0.3)" : "rgba(255,255,255,0.06)"}`, borderRadius: 8, marginBottom: 7 }}>
+                <div>
+                  <div style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{item.ItemName}</div>
+                  <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10 }}>Sold: {item.qty} · PKR {fmt(item.Price)} each</div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                  <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 11 }}>Return:</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <button className="btn" onClick={() => setRQ(item.Barcode, (returnQtys[item.Barcode] || 0) - 1)} style={{ width: 24, height: 24, background: "rgba(255,80,80,0.13)", border: "1px solid rgba(255,80,80,0.26)", color: "#ff8888", fontSize: 15, borderRadius: 4, padding: 0 }}>−</button>
+                    <span style={{ color: (returnQtys[item.Barcode] || 0) > 0 ? "#ff9500" : "#fff", fontWeight: 700, fontSize: 14, minWidth: 24, textAlign: "center" }}>{returnQtys[item.Barcode] || 0}</span>
+                    <button className="btn" onClick={() => setRQ(item.Barcode, (returnQtys[item.Barcode] || 0) + 1)} style={{ width: 24, height: 24, background: "rgba(0,180,255,0.13)", border: "1px solid rgba(0,180,255,0.26)", color: "#00b4ff", fontSize: 15, borderRadius: 4, padding: 0 }}>+</button>
+                  </div>
+                  <span style={{ color: "#ff9500", fontSize: 11, minWidth: 70, textAlign: "right" }}>PKR {fmt((returnQtys[item.Barcode] || 0) * (parseFloat(item.Price) - parseFloat(item.Discount || 0)))}</span>
+                </div>
+              </div>
+            ))}
+            <div style={{ marginTop: 12 }}>
+              <label style={{ ...lbSt, marginBottom: 5 }}>REASON FOR RETURN</label>
+              <select value={reason} onChange={e => setReason(e.target.value)} style={{ ...slSt, width: "100%" }}>
+                <option>Customer Return</option><option>Damaged Item</option><option>Wrong Item</option><option>Expired Product</option><option>Other</option>
+              </select>
+            </div>
+            {msg && <div style={{ color: "#ff6b6b", fontSize: 12, marginTop: 8 }}>{msg}</div>}
+            <div style={{ background: "rgba(255,150,0,0.08)", border: "1px solid rgba(255,150,0,0.25)", borderRadius: 9, padding: "10px 14px", marginTop: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ color: "#ff9500", fontWeight: 700, fontSize: 14 }}>REFUND AMOUNT</span>
+              <span style={{ color: "#ff9500", fontWeight: 800, fontSize: 20, fontFamily: "Orbitron" }}>PKR {fmt(refundAmt)}</span>
+            </div>
+            <div style={{ display: "flex", gap: 9, marginTop: 14 }}>
+              <button className="btn" onClick={() => setStep(1)} style={{ flex: 1, padding: 11, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.45)", borderRadius: 7 }}>← Back</button>
+              <button className="btn" onClick={confirmReturn} disabled={returnedItems.length === 0} style={{ flex: 2, padding: 11, background: returnedItems.length > 0 ? "linear-gradient(135deg,#ff6b00,#ff9500)" : "rgba(255,255,255,0.04)", border: "none", color: returnedItems.length > 0 ? "#fff" : "rgba(255,255,255,0.2)", fontSize: 13, fontWeight: 700, borderRadius: 7 }}>✓ Process Return & Print</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+
+
+// ==================== ADMIN SCREEN & TABS ====================
+function AdminScreen({ user, items, setItems, categories, setCategories, cashiers, setCashiers, sales, setSales, customers, setCustomers, returns, setReturns, onLogout, onRefresh, sheetStatus, safeCallScript, lastSync, isOnline, returnCounter, setReturnCounter, onReturnSaved }) {
+  const [tab, setTab] = useState("items");
+  const [isFS, setIsFS] = useState(false);
+  const toggleFS = () => { if (!document.fullscreenElement) { document.documentElement.requestFullscreen().catch(() => {}); setIsFS(true); } else { document.exitFullscreen(); setIsFS(false); } };
+  const TABS = [{ id: "items", label: "📦 Items" }, { id: "categories", label: "🏷 Categories" }, { id: "cashiers", label: "👤 Cashiers" }, { id: "sales", label: "📊 Sales" }, { id: "returns", label: "↩ Returns" }, { id: "profit", label: "💰 Profit" }, { id: "stock", label: "📉 Stock" }, { id: "customers", label: "🧑‍🤝‍🧑 Customers" }, { id: "setup", label: "⚙️ Setup" }];
+  return (
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column", background: "#0a0e1a" }}>
+      <div style={{ background: "linear-gradient(90deg,#0c1828,#091422)", borderBottom: "1px solid rgba(0,180,255,0.18)", padding: "9px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          <div style={{ fontFamily: "Orbitron", color: "#00b4ff", fontSize: 15, fontWeight: 900 }}>itKINS: MART POS</div>
+          <div style={{ padding: "3px 12px", borderRadius: 20, background: "rgba(255,200,0,0.08)", border: "1px solid rgba(255,200,0,0.27)", color: "#ffd700", fontSize: 11, fontWeight: 700 }}>⭐ ADMIN</div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
+          <StatusBar isOnline={isOnline} sheetStatus={sheetStatus} lastSync={lastSync} onRefresh={onRefresh} />
+          <button className="btn" onClick={toggleFS} style={{ padding: "6px 10px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "#fff", fontSize: 13, borderRadius: 6 }}>{isFS ? "⤡" : "⤢"}</button>
+          <button className="btn" onClick={onLogout} style={{ padding: "6px 12px", background: "rgba(255,80,80,0.09)", border: "1px solid rgba(255,80,80,0.26)", color: "#ff6b6b", fontSize: 11, borderRadius: 6 }}>Logout</button>
+        </div>
+      </div>
+      <div style={{ display: "flex", borderBottom: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.015)", flexShrink: 0, overflowX: "auto" }}>
+        {TABS.map(t => (
+          <button key={t.id} className="btn" onClick={() => setTab(t.id)} style={{ padding: "11px 16px", background: "transparent", border: "none", borderBottom: tab === t.id ? "2px solid #00b4ff" : "2px solid transparent", color: tab === t.id ? "#00b4ff" : "rgba(255,255,255,0.42)", fontSize: 12, fontWeight: tab === t.id ? 700 : 400, borderRadius: 0, whiteSpace: "nowrap" }}>{t.label}</button>
+        ))}
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", padding: 18 }}>
+        {tab === "items"      && <ItemsTab items={items} setItems={setItems} categories={categories} safeCallScript={safeCallScript} />}
+        {tab === "categories" && <CategoriesTab categories={categories} setCategories={setCategories} items={items} safeCallScript={safeCallScript} />}
+        {tab === "cashiers"   && <CashiersTab cashiers={cashiers} setCashiers={setCashiers} safeCallScript={safeCallScript} />}
+        {tab === "sales"      && <SalesTab sales={sales} setSales={setSales} />}
+        {tab === "returns"    && <ReturnsTab returns={returns} setReturns={setReturns} />}
+        {tab === "profit"     && <ProfitTab sales={sales} items={items} returns={returns} />}
+        {tab === "stock"      && <StockTab items={items} setItems={setItems} safeCallScript={safeCallScript} />}
+        {tab === "customers"  && <CustomersTab customers={customers} setCustomers={setCustomers} safeCallScript={safeCallScript} sales={sales} currentUser={user} />}
+        {tab === "setup"      && <SetupTab sheetStatus={sheetStatus} onRefresh={onRefresh} lastSync={lastSync} safeCallScript={safeCallScript} />}
+      </div>
+    </div>
+  );
+}
+
+// -------------------- ItemsTab --------------------
+function ItemsTab({ items, setItems, categories, safeCallScript }) {
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({ Barcode: "", Category: "", Company: "", ItemName: "", Price: "", CostPrice: "", Discount: "0", Stock: "", ExpiryDate: "" });
+  const [search, setSearch] = useState(""); const [filterCat, setFilterCat] = useState("All"); const [filterCo, setFilterCo] = useState("All");
+  const companies = [...new Set(items.map(i => i.Company || "").filter(Boolean))].sort();
+  const filtered = items.filter(i => (filterCat === "All" || i.Category === filterCat) && (filterCo === "All" || i.Company === filterCo) && (!search || i.ItemName?.toLowerCase().includes(search.toLowerCase()) || i.Barcode?.includes(search)));
+  const startAdd = () => { setEditing("new"); setForm({ Barcode: "", Category: categories[0] || "", Company: "", ItemName: "", Price: "", CostPrice: "", Discount: "0", Stock: "", ExpiryDate: "" }); };
+  const startEdit = item => { setEditing(item.Barcode); setForm({ ...item }); };
+  const save = async () => {
+    if (!form.Barcode || !form.ItemName || !form.Price) return;
+    if (editing === "new") setItems(p => [...p, form]); else setItems(p => p.map(i => i.Barcode === editing ? form : i));
+    try { await dbPut("items", { ...form, id: form.Barcode }); } catch (e) { }
+    safeCallScript({ action: editing === "new" ? "addItem" : "editItem", ...form }); setEditing(null);
+  };
+  const del = async bc => { if (window.confirm("Delete this item?")) { setItems(p => p.filter(i => i.Barcode !== bc)); try { await dbDelete("items", bc); } catch (e) { } safeCallScript({ action: "deleteItem", Barcode: bc }); } };
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 9, marginBottom: 13, flexWrap: "wrap", alignItems: "center" }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search items..." style={{ ...inSt, maxWidth: 200 }} />
+        <select value={filterCat} onChange={e => setFilterCat(e.target.value)} style={slSt}><option value="All">All Categories</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
+        <select value={filterCo}  onChange={e => setFilterCo(e.target.value)}  style={slSt}><option value="All">All Companies</option>{companies.map(c => <option key={c} value={c}>{c}</option>)}</select>
+        <button className="btn" onClick={startAdd} style={{ padding: "9px 16px", background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 12, borderRadius: 7 }}>+ Add Item</button>
+        <span style={{ color: "rgba(255,255,255,0.25)", fontSize: 11, marginLeft: "auto" }}>{filtered.length} items</span>
+      </div>
+      {editing && (
+        <div style={{ background: "rgba(0,180,255,0.04)", border: "1px solid rgba(0,180,255,0.17)", borderRadius: 11, padding: 18, marginBottom: 16 }}>
+          <div style={{ color: "#00b4ff", fontSize: 11, letterSpacing: 2, marginBottom: 13, fontWeight: 700 }}>{editing === "new" ? "➕ ADD NEW ITEM" : "✏️ EDIT ITEM"}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(165px,1fr))", gap: 11 }}>
+            {[["Barcode", "Barcode", "text"], ["ItemName", "Item Name", "text"], ["Company", "Company", "text"], ["Price", "Selling Price (PKR)", "number"], ["CostPrice", "Cost Price (PKR)", "number"], ["Discount", "Item Discount (PKR)", "number"], ["Stock", "Stock Qty", "number"]].map(([k, l, t]) => (
+              <div key={k}><label style={lbSt}>{l}</label><input type={t} value={form[k] || ""} onChange={e => setForm(p => ({ ...p, [k]: e.target.value }))} style={inSt} /></div>
+            ))}
+            <div><label style={lbSt}>EXPIRY DATE</label><input type="date" value={form.ExpiryDate || ""} onChange={e => setForm(p => ({ ...p, ExpiryDate: e.target.value }))} style={{ ...inSt, border: form.ExpiryDate ? `1px solid ${getExpiryStatus(form.ExpiryDate).color}` : "1px solid rgba(0,180,255,0.22)", colorScheme: "dark" }} />
+              {form.ExpiryDate && (() => { const es = getExpiryStatus(form.ExpiryDate); return (<div style={{ marginTop: 5, fontSize: 11, color: es.color, fontWeight: 600 }}>{es.status === "expired" ? "⛔" : es.status === "critical" || es.status === "today" ? "⚠️" : "✅"} {es.label}</div>); })()}
+            </div>
+            <div><label style={lbSt}>Category</label><select value={form.Category} onChange={e => setForm(p => ({ ...p, Category: e.target.value }))} style={slSt}>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+          </div>
+          {form.Price && form.CostPrice && parseFloat(form.Price) > 0 && (
+            <div style={{ marginTop: 10, padding: "8px 13px", background: "rgba(0,200,100,0.07)", border: "1px solid rgba(0,200,100,0.2)", borderRadius: 7, fontSize: 11, color: "#00e5a0" }}>
+              Profit per unit: PKR {fmt(parseFloat(form.Price) - parseFloat(form.CostPrice))} · Margin: {((parseFloat(form.Price) - parseFloat(form.CostPrice)) / parseFloat(form.Price) * 100).toFixed(1)}%
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 9, marginTop: 13 }}>
+            <button className="btn" onClick={save} style={{ padding: "9px 20px", background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontWeight: 700, borderRadius: 7 }}>✓ Save</button>
+            <button className="btn" onClick={() => setEditing(null)} style={{ padding: "9px 16px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.45)", borderRadius: 7 }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 100px 100px 75px 70px 70px 70px 100px 90px", padding: "8px 12px", background: "rgba(0,180,255,0.07)", color: "rgba(0,180,255,0.72)", fontSize: 10, letterSpacing: 2, fontWeight: 700 }}>
+          <div>BARCODE</div><div>ITEM NAME</div><div>CATEGORY</div><div>COMPANY</div><div style={{ textAlign: "right" }}>PRICE</div><div style={{ textAlign: "right" }}>COST</div><div style={{ textAlign: "right" }}>DISC</div><div style={{ textAlign: "right" }}>STOCK</div><div style={{ textAlign: "center" }}>EXPIRY</div><div style={{ textAlign: "center" }}>ACTIONS</div>
+        </div>
+        {filtered.map((item, idx) => {
+          const stk = Number(item.Stock) || 0;
+          const profit = parseFloat(item.Price || 0) - parseFloat(item.CostPrice || 0);
+          return (
+            <div key={idx} style={{ display: "grid", gridTemplateColumns: "110px 1fr 100px 100px 75px 70px 70px 70px 100px 90px", padding: "8px 12px", borderBottom: "1px solid rgba(255,255,255,0.03)", alignItems: "center", background: stk <= 0 ? "rgba(255,50,50,0.03)" : stk <= 5 ? "rgba(255,200,0,0.03)" : "transparent" }}>
+              <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>{item.Barcode}</div>
+              <div style={{ color: "#fff", fontSize: 12, fontWeight: 500 }}>{item.ItemName}</div>
+              <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>{item.Category}</div>
+              <div style={{ color: "rgba(0,180,255,0.7)", fontSize: 11 }}>{item.Company || "—"}</div>
+              <div style={{ color: "#00b4ff", textAlign: "right", fontWeight: 700, fontSize: 12 }}>{fmt(item.Price)}</div>
+              <div style={{ color: profit > 0 ? "#00e5a0" : "rgba(255,255,255,0.3)", textAlign: "right", fontSize: 11 }} title={`Profit: PKR ${fmt(profit)}`}>{item.CostPrice ? fmt(item.CostPrice) : "—"}</div>
+              <div style={{ color: parseFloat(item.Discount) > 0 ? "#ffd700" : "rgba(255,255,255,0.22)", textAlign: "right", fontSize: 12 }}>{item.Discount}</div>
+              <div style={{ textAlign: "right", fontWeight: 700, fontSize: 12, color: stk <= 0 ? "#ff6b6b" : stk <= 5 ? "#ffd700" : "#00e5a0" }}>{item.Stock}{stk <= 0 ? " ❌" : stk <= 5 ? " ⚠️" : ""}</div>
+              {(() => { const es = getExpiryStatus(item.ExpiryDate); return (
+                <div style={{ textAlign: "center" }}><div style={{ color: es.color, fontSize: 10, fontWeight: 700 }}>{fmtExpiry(item.ExpiryDate)}</div>{item.ExpiryDate && <div style={{ fontSize: 9, color: es.color, opacity: 0.85 }}>{es.label}</div>}</div>
+              ); })()}
+              <div style={{ display: "flex", gap: 5, justifyContent: "center" }}>
+                <button className="btn" onClick={() => startEdit(item)} style={{ padding: "4px 9px", background: "rgba(0,180,255,0.1)", border: "1px solid rgba(0,180,255,0.2)", color: "#00b4ff", fontSize: 11, borderRadius: 5 }}>Edit</button>
+                <button className="btn" onClick={() => del(item.Barcode)} style={{ padding: "4px 9px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 11, borderRadius: 5 }}>Del</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// -------------------- CategoriesTab --------------------
+function CategoriesTab({ categories, setCategories, items, safeCallScript }) {
+  const [val, setVal] = useState("");
+  const add = () => { const v = val.trim(); if (v && !categories.includes(v)) { setCategories(p => [...p, v]); safeCallScript({ action: "addCategory", CategoryName: v }); setVal(""); } };
+  const del = cat => { if (items.some(i => i.Category === cat)) { alert(`"${cat}" used by items.`); return; } if (window.confirm(`Delete "${cat}"?`)) { setCategories(p => p.filter(c => c !== cat)); safeCallScript({ action: "deleteCategory", CategoryName: cat }); } };
+  return (
+    <div style={{ maxWidth: 460 }}>
+      <div style={{ display: "flex", gap: 9, marginBottom: 16 }}>
+        <input value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => e.key === "Enter" && add()} placeholder="New category name..." style={inSt} />
+        <button className="btn" onClick={add} style={{ padding: "9px 16px", background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 12, borderRadius: 7, whiteSpace: "nowrap" }}>+ Add</button>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+        {categories.map(cat => { const cnt = items.filter(i => i.Category === cat).length; return (
+          <div key={cat} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 15px", background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10 }}>
+            <div><span style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{cat}</span><span style={{ color: "rgba(255,255,255,0.26)", fontSize: 11, marginLeft: 9 }}>{cnt} items</span></div>
+            <button className="btn" onClick={() => del(cat)} style={{ padding: "5px 11px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 11, borderRadius: 6 }}>Delete</button>
+          </div>
+        ); })}
+      </div>
+    </div>
+  );
+}
+
+// -------------------- CashiersTab --------------------
+function CashiersTab({ cashiers, setCashiers, safeCallScript }) {
+  const [editing, setEditing] = useState(null); const [origUsername, setOrigUsername] = useState(""); const [form, setForm] = useState({ Name: "", Username: "", PIN: "", Role: "cashier" });
+  const startAdd  = () => { setEditing("__new__"); setOrigUsername(""); setForm({ Name: "", Username: "", PIN: "", Role: "cashier" }); };
+  const startEdit = c => { setEditing(c.Username); setOrigUsername(c.Username); setForm({ ...c }); };
+  const save = async () => {
+    if (!form.Name || !form.Username || !form.PIN) return;
+    if (editing === "__new__") {
+      setCashiers(p => [...p, form]);
+      try { await dbPut("cashiers", { ...form, id: form.Username }); } catch(e) {}
+      safeCallScript({ action: "addCashier", Name: form.Name, Username: form.Username, PIN: form.PIN, Role: form.Role });
+    } else {
+      setCashiers(p => p.map(c => c.Username === origUsername ? form : c));
+      try { await dbPut("cashiers", { ...form, id: form.Username }); } catch(e) {}
+      safeCallScript({ action: "editCashier", Name: form.Name, Username: form.Username, PIN: form.PIN, Role: form.Role, OrigUsername: origUsername });
+    }
+    setEditing(null); setOrigUsername("");
+  };
+  const del = username => { if (window.confirm("Delete this user?")) { setCashiers(p => p.filter(c => c.Username !== username)); safeCallScript({ action: "deleteCashier", Username: username }); } };
+  return (
+    <div style={{ maxWidth: 560 }}>
+      <button className="btn" onClick={startAdd} style={{ padding: "9px 16px", background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 12, borderRadius: 7, marginBottom: 14 }}>+ Add User</button>
+      {editing && (
+        <div style={{ background: "rgba(0,180,255,0.04)", border: "1px solid rgba(0,180,255,0.17)", borderRadius: 11, padding: 18, marginBottom: 16 }}>
+          <div style={{ color: "#00b4ff", fontSize: 11, letterSpacing: 2, marginBottom: 13, fontWeight: 700 }}>{editing === "__new__" ? "➕ ADD USER" : "✏️ EDIT USER"}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 11 }}>
+            {[["Name", "Full Name"], ["Username", "Username"], ["PIN", "PIN Code"]].map(([k, l]) => (<div key={k}><label style={lbSt}>{l}</label><input value={form[k]} onChange={e => setForm(p => ({ ...p, [k]: e.target.value }))} style={inSt} type={k === "PIN" ? "password" : "text"} /></div>))}
+            <div><label style={lbSt}>Role</label><select value={form.Role} onChange={e => setForm(p => ({ ...p, Role: e.target.value }))} style={slSt}><option value="cashier">Cashier</option><option value="admin">Admin</option></select></div>
+          </div>
+          <div style={{ display: "flex", gap: 9, marginTop: 13 }}>
+            <button className="btn" onClick={save} style={{ padding: "9px 20px", background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontWeight: 700, borderRadius: 7 }}>✓ Save</button>
+            <button className="btn" onClick={() => { setEditing(null); setOrigUsername(""); }} style={{ padding: "9px 16px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.42)", borderRadius: 7 }}>Cancel</button>
+          </div>
+        </div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+        {cashiers.map((c, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 15px", background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+              <div style={{ width: 38, height: 38, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 15, color: "#fff", background: c.Role === "admin" ? "linear-gradient(135deg,#ffd700,#ff8c00)" : "linear-gradient(135deg,#0062ff,#00b4ff)" }}>{c.Name?.[0] || "?"}</div>
+              <div><div style={{ color: "#fff", fontWeight: 600, fontSize: 13 }}>{c.Name}</div><div style={{ color: "rgba(255,255,255,0.32)", fontSize: 11 }}>@{c.Username} · PIN: {"●".repeat(c.PIN?.length || 4)}</div></div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <span style={{ padding: "3px 9px", borderRadius: 20, fontSize: 10, fontWeight: 700, background: c.Role === "admin" ? "rgba(255,200,0,0.1)" : "rgba(0,180,255,0.1)", color: c.Role === "admin" ? "#ffd700" : "#00b4ff" }}>{c.Role?.toUpperCase()}</span>
+              <button className="btn" onClick={() => startEdit(c)} style={{ padding: "4px 10px", background: "rgba(0,180,255,0.1)", border: "1px solid rgba(0,180,255,0.2)", color: "#00b4ff", fontSize: 11, borderRadius: 5 }}>Edit</button>
+              <button className="btn" onClick={() => del(c.Username)} style={{ padding: "4px 10px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 11, borderRadius: 5 }}>Del</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// -------------------- SalesTab --------------------
+function SalesTab({ sales, setSales }) {
+  const [filterDate, setFilterDate] = useState("");
+  const [filterCashier, setFilterCashier] = useState("All");
+  const [viewBill, setViewBill] = useState(null);
+  const cashierList = [...new Set(sales.map(s => s.Cashier).filter(Boolean))];
+  const filtered = sales.filter(s => filterDateMatch(s.Date, filterDate) && (filterCashier === "All" || s.Cashier === filterCashier));
+  const totalRev = filtered.reduce((s, r) => s + parseFloat(r.GrandTotal || 0), 0);
+  const totalDisc = filtered.reduce((s, r) => s + parseFloat(r.Discount || 0), 0);
+  const reprintBill = sale => {
+    const items = safeParseItems(sale.ItemsDetail);
+    const subTotal = items.reduce((s, i) => s + parseFloat(i.Price||0) * (parseInt(i.qty)||1), 0);
+    const itemDiscount = items.reduce((s, i) => s + parseFloat(i.Discount||0) * (parseInt(i.qty)||1), 0);
+    const totalDiscount = parseFloat(sale.Discount || 0);
+    const grandTotal = parseFloat(sale.GrandTotal || 0);
+    printReceipt({
+      billNo: sale.BillNo, date: sale.Date, time: sale.Time, cashier: sale.Cashier, items,
+      subTotal, totalDiscount, itemDiscount, billDiscount: Math.max(0, totalDiscount - itemDiscount), billDiscountPct: 0,
+      grandTotal, payments: [{ type: "cash", amount: grandTotal, last4: "" }], change: 0,
+      customerName: sale.CustomerName || "", customerCell: sale.CustomerCell || "", refundApplied: sale.RefundApplied || 0,
+    });
+  };
+  return (
+    <div>
+      {viewBill && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.87)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setViewBill(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#0d1b2a", border: "1px solid rgba(0,180,255,0.3)", borderRadius: 14, padding: 24, maxWidth: 540, width: "100%", maxHeight: "86vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div style={{ fontFamily: "Orbitron", color: "#00b4ff", fontSize: 16 }}>Bill #{viewBill.BillNo}</div>
+              <button className="btn" onClick={() => setViewBill(null)} style={{ padding: "4px 10px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 13, borderRadius: 6 }}>✕ Close</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
+              {[["Date", viewBill.Date], ["Time", viewBill.Time], ["Cashier", viewBill.Cashier], ["Payment", viewBill.PaymentMethod], ["Customer", (viewBill.CustomerName && viewBill.CustomerName !== "Unknown" && viewBill.CustomerName.trim() !== "") ? viewBill.CustomerName : "Walk-in"], ["Cell #", viewBill.CustomerCell || "—"]].map(([l, v]) => (<div key={l} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "8px 12px" }}><div style={{ color: "rgba(0,180,255,0.7)", fontSize: 10, letterSpacing: 1, marginBottom: 2 }}>{l}</div><div style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{v}</div></div>))}
+            </div>
+            {(() => {
+              const items = safeParseItems(viewBill.ItemsDetail);
+              if (!items.length) return <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 12, textAlign: "center", padding: 16 }}>No item detail available.</div>;
+              const grouped = {}; items.forEach(i => { const c = i.Category || "Items"; if (!grouped[c]) grouped[c] = []; grouped[c].push(i); });
+              return <div>{Object.keys(grouped).sort().map(cat => (<div key={cat} style={{ marginBottom: 10 }}><div style={{ color: "#00b4ff", fontSize: 10, letterSpacing: 2, fontWeight: 700, marginBottom: 5, padding: "4px 8px", background: "rgba(0,180,255,0.05)", borderRadius: 5 }}>── {cat.toUpperCase()} ──</div>{grouped[cat].map((item, i) => { const disc = parseFloat(item.Discount || 0); const lt = item.qty * parseFloat(item.Price || 0) - disc * item.qty; return (<div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 10px", background: "rgba(255,255,255,0.025)", borderRadius: 7, marginBottom: 4 }}><div><div style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>{item.ItemName || item.Barcode}</div><div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10 }}>{item.qty} x PKR {fmt(item.Price)}{disc > 0 ? ` · Disc: PKR ${fmt(disc * item.qty)}` : ""}</div></div><div style={{ color: "#00e5a0", fontWeight: 700, fontSize: 13 }}>PKR {fmt(lt)}</div></div>); })}</div>))}</div>;
+            })()}
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 12, paddingTop: 12 }}>
+              {viewBill.RefundApplied > 0 && <div style={{ display: "flex", justifyContent: "space-between", color: "#ff9500", fontSize: 12, marginBottom: 4 }}><span>Refund Applied</span><span>− PKR {fmt(viewBill.RefundApplied)}</span></div>}
+              <div style={{ display: "flex", justifyContent: "space-between", color: "rgba(255,255,255,0.4)", fontSize: 11, marginBottom: 4 }}><span>FBR Charges</span><span>PKR 0.00</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}><span style={{ color: "#fff", fontSize: 15 }}>GRAND TOTAL</span><span style={{ color: "#00b4ff", fontSize: 18, fontFamily: "Orbitron" }}>PKR {fmt(viewBill.GrandTotal)}</span></div>
+            </div>
+            <button className="btn" onClick={() => reprintBill(viewBill)} style={{ width: "100%", marginTop: 14, padding: "11px", background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 13, borderRadius: 8, fontWeight: 700 }}>🖨 Reprint This Bill</button>
+          </div>
+        </div>
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(165px,1fr))", gap: 11, marginBottom: 16 }}>
+        {[{ label: "Total Revenue", value: `PKR ${fmt(totalRev)}`, color: "#00b4ff", icon: "💰" }, { label: "Total Discount", value: `PKR ${fmt(totalDisc)}`, color: "#ffd700", icon: "🏷️" }, { label: "FBR Charges", value: `PKR 0`, color: "#a78bfa", icon: "🧾" }, { label: "Total Bills", value: filtered.length, color: "#00e5a0", icon: "🧮" }].map((card, i) => (<div key={i} style={{ background: "rgba(255,255,255,0.025)", border: `1px solid ${card.color}26`, borderRadius: 11, padding: "14px 17px" }}><div style={{ fontSize: 19, marginBottom: 5 }}>{card.icon}</div><div style={{ color: "rgba(255,255,255,0.42)", fontSize: 10, letterSpacing: 2, marginBottom: 3 }}>{card.label}</div><div style={{ color: card.color, fontSize: 18, fontWeight: 800, fontFamily: "Orbitron" }}>{card.value}</div></div>))}
+      </div>
+      <div style={{ display: "flex", gap: 12, marginBottom: 13, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div><label style={{ ...lbSt, marginBottom: 4 }}>Filter by Date</label><input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} style={{ ...inSt, maxWidth: 180 }} /></div>
+        <div><label style={{ ...lbSt, marginBottom: 4 }}>Filter by Cashier</label><select value={filterCashier} onChange={e => setFilterCashier(e.target.value)} style={slSt}><option value="All">All Cashiers</option>{cashierList.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+        <button className="btn" onClick={() => { setFilterDate(""); setFilterCashier("All"); }} style={{ padding: "9px 14px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.45)", borderRadius: 7 }}>Clear</button>
+      </div>
+      <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "80px 95px 80px 110px 100px 80px 80px 110px 130px", padding: "8px 12px", background: "rgba(0,180,255,0.07)", color: "rgba(0,180,255,0.72)", fontSize: 10, letterSpacing: 2, fontWeight: 700 }}>
+          <div>BILL#</div><div>DATE</div><div>TIME</div><div>CASHIER</div><div>CUSTOMER</div><div style={{ textAlign: "right" }}>TOTAL</div><div style={{ textAlign: "right" }}>FBR</div><div>PAYMENT</div><div>CELL</div>
+        </div>
+        <div style={{ maxHeight: 400, overflowY: "auto" }}>
+          {[...filtered].reverse().map((sale, i) => (<div key={i} onClick={() => setViewBill(sale)} style={{ display: "grid", gridTemplateColumns: "80px 95px 80px 110px 100px 80px 80px 110px 130px", padding: "8px 12px", borderBottom: "1px solid rgba(255,255,255,0.03)", alignItems: "center", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.background = "rgba(0,180,255,0.06)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+            <div style={{ color: "#00b4ff", fontWeight: 700, fontSize: 12 }}>#{sale.BillNo}</div>
+            <div style={{ color: "rgba(255,255,255,0.48)", fontSize: 11 }}>{sale.Date}</div>
+            <div style={{ color: "rgba(255,255,255,0.48)", fontSize: 11 }}>{sale.Time}</div>
+            <div style={{ color: "#fff", fontSize: 12 }}>{sale.Cashier}</div>
+            <div style={{ color: sale.CustomerName && sale.CustomerName !== "Unknown" && sale.CustomerName.trim() !== "" ? "#00e5a0" : "rgba(255,255,255,0.3)", fontSize: 11 }}>{sale.CustomerName && sale.CustomerName !== "Unknown" && sale.CustomerName.trim() !== "" ? sale.CustomerName : "Walk-in"}</div>
+            <div style={{ color: "#00e5a0", textAlign: "right", fontWeight: 700, fontSize: 12 }}>{fmt(sale.GrandTotal)}</div>
+            <div style={{ color: "#a78bfa", textAlign: "right", fontSize: 11 }}>PKR {fmt(sale.FBR || 1)}</div>
+            <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>{sale.PaymentMethod}</div>
+            <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10 }}>{sale.CustomerCell || "—"}</div>
+          </div>))}
+        </div>
+      </div>
+      <div style={{ marginTop: 7, color: "rgba(255,255,255,0.22)", fontSize: 11 }}>{filtered.length} transactions · 👆 Click any row to view &amp; reprint</div>
+    </div>
+  );
+}
+
+// -------------------- ReturnsTab --------------------
+function ReturnsTab({ returns }) {
+  const [filterDate, setFilterDate] = useState("");
+  const [viewRet, setViewRet] = useState(null);
+  const filtered = returns.filter(r => !filterDate || filterDateMatch(r.Date, filterDate));
+  const totalRefund = filtered.reduce((s, r) => s + parseFloat(r.RefundAmount || 0), 0);
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(165px,1fr))", gap: 11, marginBottom: 16 }}>
+        {[{ label: "Total Returns", value: filtered.length, color: "#ff9500", icon: "↩" }, { label: "Total Refunded", value: `PKR ${fmt(totalRefund)}`, color: "#ff6b6b", icon: "💸" }].map((card, i) => (<div key={i} style={{ background: "rgba(255,255,255,0.025)", border: `1px solid ${card.color}26`, borderRadius: 11, padding: "14px 17px" }}><div style={{ fontSize: 19, marginBottom: 5 }}>{card.icon}</div><div style={{ color: "rgba(255,255,255,0.42)", fontSize: 10, letterSpacing: 2, marginBottom: 3 }}>{card.label}</div><div style={{ color: card.color, fontSize: 18, fontWeight: 800, fontFamily: "Orbitron" }}>{card.value}</div></div>))}
+      </div>
+      <div style={{ display: "flex", gap: 12, marginBottom: 13, alignItems: "flex-end" }}>
+        <div><label style={{ ...lbSt, marginBottom: 4 }}>Filter by Date</label><input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} style={{ ...inSt, maxWidth: 180 }} /></div>
+        <button className="btn" onClick={() => setFilterDate("")} style={{ padding: "9px 14px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.45)", borderRadius: 7 }}>Clear</button>
+      </div>
+      {viewRet && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.87)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setViewRet(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#0d1b2a", border: "1px solid rgba(255,150,0,0.3)", borderRadius: 14, padding: 24, maxWidth: 480, width: "100%" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}><div style={{ fontFamily: "Orbitron", color: "#ff9500", fontSize: 15 }}>Return #{viewRet.ReturnNo}</div><button className="btn" onClick={() => setViewRet(null)} style={{ padding: "4px 10px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 13, borderRadius: 6 }}>✕</button></div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>{[["Orig Bill", viewRet.OrigBillNo], ["Date", viewRet.Date], ["Cashier", viewRet.Cashier], ["Reason", viewRet.Reason]].map(([l, v]) => (<div key={l} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "8px 12px" }}><div style={{ color: "rgba(255,150,0,0.7)", fontSize: 10 }}>{l}</div><div style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{v}</div></div>))}</div>
+            {safeParseItems(viewRet.Items).map((item, i) => (<div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "7px 10px", background: "rgba(255,255,255,0.025)", borderRadius: 7, marginBottom: 4 }}><span style={{ color: "#fff", fontSize: 12 }}>{item.ItemName} × {item.qty}</span><span style={{ color: "#ff9500", fontWeight: 700 }}>PKR {fmt(item.qty * parseFloat(item.Price || 0))}</span></div>))}
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12, padding: "10px 0", borderTop: "1px solid rgba(255,255,255,0.08)" }}><span style={{ color: "#fff", fontWeight: 700, fontSize: 15 }}>REFUND AMOUNT</span><span style={{ color: "#ff9500", fontWeight: 800, fontSize: 18, fontFamily: "Orbitron" }}>PKR {fmt(viewRet.RefundAmount)}</span></div>
+            <button className="btn" onClick={() => printReturnReceipt(viewRet)} style={{ width: "100%", marginTop: 12, padding: 11, background: "linear-gradient(135deg,#ff6b00,#ff9500)", color: "#fff", fontSize: 13, borderRadius: 8, fontWeight: 700 }}>🖨 Reprint Return Receipt</button>
+          </div>
+        </div>
+      )}
+      <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "90px 90px 95px 80px 110px 100px", padding: "8px 12px", background: "rgba(255,150,0,0.07)", color: "rgba(255,150,0,0.72)", fontSize: 10, letterSpacing: 2, fontWeight: 700 }}> <div>RETURN#</div><div>ORIG BILL</div><div>DATE</div><div>TIME</div><div>CASHIER</div><div style={{ textAlign: "right" }}>REFUND</div></div>
+        {filtered.length === 0 ? (<div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 100, color: "rgba(255,255,255,0.2)", gap: 8 }}><div style={{ fontSize: 26 }}>↩</div><div style={{ fontSize: 12 }}>No returns yet</div></div>) : [...filtered].reverse().map((r, i) => (<div key={i} onClick={() => setViewRet(r)} style={{ display: "grid", gridTemplateColumns: "90px 90px 95px 80px 110px 100px", padding: "8px 12px", borderBottom: "1px solid rgba(255,255,255,0.03)", alignItems: "center", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.background = "rgba(255,150,0,0.06)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+          <div style={{ color: "#ff9500", fontWeight: 700, fontSize: 12 }}>{r.ReturnNo}</div>
+          <div style={{ color: "#00b4ff", fontSize: 12 }}>#{r.OrigBillNo}</div>
+          <div style={{ color: "rgba(255,255,255,0.48)", fontSize: 11 }}>{r.Date}</div>
+          <div style={{ color: "rgba(255,255,255,0.48)", fontSize: 11 }}>{r.Time}</div>
+          <div style={{ color: "#fff", fontSize: 12 }}>{r.Cashier}</div>
+          <div style={{ color: "#ff6b6b", textAlign: "right", fontWeight: 700, fontSize: 12 }}>PKR {fmt(r.RefundAmount)}</div>
+        </div>))}
+      </div>
+    </div>
+  );
+}
+
+// -------------------- ProfitTab --------------------
+function ProfitTab({ sales, items, returns }) {
+  const [filterDate, setFilterDate] = useState("");
+  const [filterCashier, setFilterCashier] = useState("All");
+  const [filterCat, setFilterCat] = useState("All");
+  const cashierList = [...new Set(sales.map(s => s.Cashier).filter(Boolean))];
+  const categories = [...new Set(items.map(i => i.Category).filter(Boolean))].sort();
+  const itemMap = new Map(items.map(i => [i.Barcode, i]));
+
+  const filtered = sales.filter(s => filterDateMatch(s.Date, filterDate) && (filterCashier === "All" || s.Cashier === filterCashier));
+
+  let totalRevenue = 0, totalCost = 0, totalDiscount = 0, totalRefund = 0;
+  const categoryProfit = {};
+  const topItems = {};
+
+  filtered.forEach(sale => {
+    const saleItems = safeParseItems(sale.ItemsDetail);
+    saleItems.forEach(si => {
+      if (filterCat !== "All" && si.Category !== filterCat) return;
+      const masterItem = itemMap.get(si.Barcode);
+      const sellPrice = parseFloat(si.Price || 0);
+      const costPrice = parseFloat(masterItem?.CostPrice || si.CostPrice || 0);
+      const disc = parseFloat(si.Discount || 0);
+      const qty = parseInt(si.qty) || 1;
+      const revenue = (sellPrice - disc) * qty;
+      const cost = costPrice * qty;
+      const profit = revenue - cost;
+      totalRevenue += revenue;
+      totalCost += cost;
+      const cat = si.Category || "Unknown";
+      if (!categoryProfit[cat]) categoryProfit[cat] = { revenue: 0, cost: 0, profit: 0, qty: 0 };
+      categoryProfit[cat].revenue += revenue; categoryProfit[cat].cost += cost; categoryProfit[cat].profit += profit; categoryProfit[cat].qty += qty;
+      const key = si.Barcode;
+      if (!topItems[key]) topItems[key] = { name: si.ItemName, revenue: 0, profit: 0, qty: 0 };
+      topItems[key].revenue += revenue; topItems[key].profit += profit; topItems[key].qty += qty;
+    });
+    totalDiscount += parseFloat(sale.Discount || 0);
+  });
+
+  const filteredReturns = returns.filter(r => filterDateMatch(r.Date, filterDate));
+  filteredReturns.forEach(r => { totalRefund += parseFloat(r.RefundAmount || 0); });
+  const netRevenue = totalRevenue - totalRefund;
+  const netProfit = netRevenue - totalCost;
+  const margin = netRevenue > 0 ? (netProfit / netRevenue * 100).toFixed(1) : 0;
+
+  const topItemsList = Object.entries(topItems).sort((a, b) => b[1].profit - a[1].profit).slice(0, 10);
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div><label style={{ ...lbSt, marginBottom: 4 }}>Date</label><input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} style={{ ...inSt, maxWidth: 180 }} /></div>
+        <div><label style={{ ...lbSt, marginBottom: 4 }}>Cashier</label><select value={filterCashier} onChange={e => setFilterCashier(e.target.value)} style={slSt}><option value="All">All</option>{cashierList.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+        <div><label style={{ ...lbSt, marginBottom: 4 }}>Category</label><select value={filterCat} onChange={e => setFilterCat(e.target.value)} style={slSt}><option value="All">All</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+        <button className="btn" onClick={() => { setFilterDate(""); setFilterCashier("All"); setFilterCat("All"); }} style={{ padding: "9px 14px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.45)", borderRadius: 7 }}>Clear</button>
+      </div>
+      {totalCost === 0 && (<div style={{ background: "rgba(255,200,0,0.07)", border: "1px solid rgba(255,200,0,0.25)", borderRadius: 10, padding: "14px 18px", marginBottom: 16, color: "#ffd700", fontSize: 12 }}>⚠ Cost prices not set for some items. Go to <b>Items tab → Edit</b> and add <b>Cost Price</b> for accurate profit calculation.</div>)}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 11, marginBottom: 18 }}>
+        {[{ label: "Net Revenue", value: `PKR ${fmt(netRevenue)}`, color: "#00b4ff", icon: "💰" }, { label: "Total Cost", value: `PKR ${fmt(totalCost)}`, color: "#ff6b6b", icon: "🏭" }, { label: "NET PROFIT", value: `PKR ${fmt(netProfit)}`, color: netProfit >= 0 ? "#00e5a0" : "#ff6b6b", icon: "📈" }, { label: "Profit Margin", value: `${margin}%`, color: "#ffd700", icon: "%" }, { label: "Total Discount", value: `PKR ${fmt(totalDiscount)}`, color: "#a78bfa", icon: "🏷" }, { label: "Refunds", value: `PKR ${fmt(totalRefund)}`, color: "#ff9500", icon: "↩" }].map((card, i) => (<div key={i} style={{ background: "rgba(255,255,255,0.025)", border: `1px solid ${card.color}26`, borderRadius: 11, padding: "14px 17px" }}><div style={{ fontSize: 19, marginBottom: 5 }}>{card.icon}</div><div style={{ color: "rgba(255,255,255,0.42)", fontSize: 10, letterSpacing: 2, marginBottom: 3 }}>{card.label}</div><div style={{ color: card.color, fontSize: 16, fontWeight: 800, fontFamily: "Orbitron" }}>{card.value}</div></div>))}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
+          <div style={{ padding: "10px 14px", background: "rgba(0,180,255,0.07)", color: "rgba(0,180,255,0.8)", fontSize: 11, letterSpacing: 2, fontWeight: 700 }}>PROFIT BY CATEGORY</div>
+          {Object.entries(categoryProfit).sort((a, b) => b[1].profit - a[1].profit).map(([cat, data], i) => (<div key={i} style={{ padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><div style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>{cat}</div><div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10 }}>Revenue: PKR {fmt(data.revenue)} · Qty: {data.qty}</div></div><div style={{ textAlign: "right" }}><div style={{ color: data.profit >= 0 ? "#00e5a0" : "#ff6b6b", fontWeight: 700, fontSize: 13 }}>PKR {fmt(data.profit)}</div><div style={{ color: "rgba(255,255,255,0.3)", fontSize: 10 }}>{data.revenue > 0 ? (data.profit / data.revenue * 100).toFixed(1) : 0}%</div></div></div>))}
+          {Object.keys(categoryProfit).length === 0 && <div style={{ padding: 20, color: "rgba(255,255,255,0.2)", textAlign: "center", fontSize: 12 }}>No data</div>}
+        </div>
+        <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
+          <div style={{ padding: "10px 14px", background: "rgba(0,200,100,0.07)", color: "rgba(0,200,100,0.8)", fontSize: 11, letterSpacing: 2, fontWeight: 700 }}>TOP ITEMS BY PROFIT</div>
+          {topItemsList.map(([bc, data], i) => (<div key={i} style={{ padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><div style={{ color: "#fff", fontSize: 12, fontWeight: 600 }}>{data.name || bc}</div><div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10 }}>Sold: {data.qty} units</div></div><div style={{ textAlign: "right" }}><div style={{ color: "#00e5a0", fontWeight: 700, fontSize: 13 }}>PKR {fmt(data.profit)}</div><div style={{ color: "rgba(255,255,255,0.3)", fontSize: 10 }}>Rev: PKR {fmt(data.revenue)}</div></div></div>))}
+          {topItemsList.length === 0 && <div style={{ padding: 20, color: "rgba(255,255,255,0.2)", textAlign: "center", fontSize: 12 }}>No data</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// -------------------- StockTab with PDF download --------------------
+function StockTab({ items, setItems, safeCallScript }) {
+  const [adjusting, setAdjusting] = useState(null);
+  const [adjVal, setAdjVal] = useState("");
+  const [filterCat, setFilterCat] = useState("All");
+  const [filterCo, setFilterCo] = useState("All");
+  const [filterStatus, setFilterStatus] = useState("All");
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  const categories = [...new Set(items.map(i => i.Category || "").filter(Boolean))].sort();
+  const companies = [...new Set(items.map(i => i.Company || "").filter(Boolean))].sort();
+  const filtered = items.filter(i => {
+    const stk = Number(i.Stock) || 0;
+    const es = getExpiryStatus(i.ExpiryDate);
+    if (filterCat !== "All" && i.Category !== filterCat) return false;
+    if (filterCo !== "All" && i.Company !== filterCo) return false;
+    if (filterStatus === "out" && stk > 0) return false;
+    if (filterStatus === "low" && (stk <= 0 || stk > 5)) return false;
+    if (filterStatus === "ok" && stk <= 5) return false;
+    if (filterStatus === "expired" && es.status !== "expired") return false;
+    if (filterStatus === "expiring" && !["critical","today","warning"].includes(es.status)) return false;
+    return true;
+  }).sort((a, b) => (Number(a.Stock) || 0) - (Number(b.Stock) || 0));
+
+  const doAdjust = async bc => {
+    const n = parseInt(adjVal); if (isNaN(n) || n < 0) return;
+    const old = items.find(i => i.Barcode === bc); const before = Number(old?.Stock) || 0;
+    setItems(p => p.map(i => i.Barcode === bc ? { ...i, Stock: String(n) } : i));
+    try { await dbPut("items", { ...old, Stock: String(n), id: bc }); } catch (e) { }
+    safeCallScript({ action: "adjustStock", Barcode: bc, AdjustType: "set", Value: n, Reason: "Admin Manual", Before: before, After: n, ItemName: old?.ItemName || bc });
+    setAdjusting(null); setAdjVal("");
+  };
+
+  const handleDownloadPDF = async () => {
+    setPdfLoading(true);
+    try { await downloadStockPDF(filtered, filterCat, filterCo, filterStatus); }
+    catch (e) { alert("PDF generation failed: " + e.message); }
+    finally { setPdfLoading(false); }
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 11, marginBottom: 15, flexWrap: "wrap" }}>
+        {[{ label: "Out of Stock", color: "#ff6b6b", cnt: items.filter(i => (Number(i.Stock) || 0) <= 0).length },
+          { label: "Low Stock (≤5)", color: "#ffd700", cnt: items.filter(i => (Number(i.Stock) || 0) > 0 && (Number(i.Stock) || 0) <= 5).length },
+          { label: "In Stock", color: "#00e5a0", cnt: items.filter(i => (Number(i.Stock) || 0) > 5).length },
+          { label: "Stock Value", color: "#a78bfa", cnt: `PKR ${fmt(items.reduce((s, i) => s + parseFloat(i.Price || 0) * (Number(i.Stock) || 0), 0))}` }].map((s, i) => (<div key={i} style={{ padding: "11px 17px", background: "rgba(255,255,255,0.025)", border: `1px solid ${s.color}26`, borderRadius: 10 }}><div style={{ color: s.color, fontSize: 21, fontWeight: 800 }}>{s.cnt}</div><div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>{s.label}</div></div>))}
+      </div>
+
+      {/* Expiry Alert Banner */}
+      {(() => {
+        const expiredItems = items.filter(i => getExpiryStatus(i.ExpiryDate).status === "expired");
+        const criticalItems = items.filter(i => ["critical","today"].includes(getExpiryStatus(i.ExpiryDate).status));
+        const warningItems = items.filter(i => getExpiryStatus(i.ExpiryDate).status === "warning");
+        if (!expiredItems.length && !criticalItems.length && !warningItems.length) return null;
+        return (<div style={{ marginBottom: 14, display: "flex", flexDirection: "column", gap: 7 }}>
+          {expiredItems.length > 0 && (<div style={{ padding: "10px 16px", background: "rgba(255,40,40,0.1)", border: "1px solid rgba(255,40,40,0.4)", borderRadius: 9, display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 18 }}>⛔</span><div><div style={{ color: "#ff4444", fontWeight: 700, fontSize: 12 }}>{expiredItems.length} EXPIRED item(s)</div><div style={{ color: "rgba(255,100,100,0.8)", fontSize: 11 }}>{expiredItems.map(i => i.ItemName).join(", ")}</div></div></div>)}
+          {criticalItems.length > 0 && (<div style={{ padding: "10px 16px", background: "rgba(255,107,0,0.1)", border: "1px solid rgba(255,107,0,0.4)", borderRadius: 9, display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 18 }}>⚠️</span><div><div style={{ color: "#ff6b00", fontWeight: 700, fontSize: 12 }}>{criticalItems.length} item(s) expiring within 7 days</div><div style={{ color: "rgba(255,150,0,0.8)", fontSize: 11 }}>{criticalItems.map(i => `${i.ItemName} (${getExpiryStatus(i.ExpiryDate).label})`).join(", ")}</div></div></div>)}
+          {warningItems.length > 0 && (<div style={{ padding: "10px 16px", background: "rgba(255,200,0,0.08)", border: "1px solid rgba(255,200,0,0.3)", borderRadius: 9, display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 18 }}>🕐</span><div><div style={{ color: "#ffd700", fontWeight: 700, fontSize: 12 }}>{warningItems.length} item(s) expiring within 30 days</div><div style={{ color: "rgba(255,220,0,0.7)", fontSize: 11 }}>{warningItems.map(i => `${i.ItemName} (${getExpiryStatus(i.ExpiryDate).label})`).join(", ")}</div></div></div>)}
+        </div>);
+      })()}
+
+      <div style={{ display: "flex", gap: 9, marginBottom: 13, flexWrap: "wrap", alignItems: "center" }}>
+        <select value={filterCat} onChange={e => setFilterCat(e.target.value)} style={slSt}><option value="All">All Categories</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
+        <select value={filterCo} onChange={e => setFilterCo(e.target.value)} style={slSt}><option value="All">All Companies</option>{companies.map(c => <option key={c} value={c}>{c}</option>)}</select>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} style={slSt}><option value="All">All Status</option><option value="out">❌ Out of Stock</option><option value="low">⚠️ Low Stock</option><option value="ok">✅ In Stock</option><option value="expired">⛔ Expired</option><option value="expiring">🕐 Expiring Soon</option></select>
+        <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 11 }}>{filtered.length} items</span>
+        <button className="btn" onClick={handleDownloadPDF} disabled={pdfLoading || filtered.length === 0} style={{ marginLeft: "auto", padding: "9px 18px", background: pdfLoading ? "rgba(255,200,0,0.1)" : "linear-gradient(135deg,#b45309,#fbbf24)", border: "none", color: pdfLoading ? "#fbbf24" : "#000", fontSize: 12, fontWeight: 700, borderRadius: 7, display: "flex", alignItems: "center", gap: 6 }}>{pdfLoading ? <><span style={{ display: "inline-block", width: 12, height: 12, border: "2px solid #fbbf24", borderTop: "2px solid transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} /> Generating...</> : <>📄 Download PDF ({filtered.length} items)</>}</button>
+      </div>
+
+      <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 110px 110px 85px 95px 105px 130px", padding: "8px 12px", background: "rgba(0,180,255,0.07)", color: "rgba(0,180,255,0.72)", fontSize: 10, letterSpacing: 2, fontWeight: 700 }}>
+          <div>BARCODE</div><div>ITEM</div><div>COMPANY</div><div>CATEGORY</div><div style={{ textAlign: "right" }}>PRICE</div><div style={{ textAlign: "right" }}>STOCK</div><div style={{ textAlign: "center" }}>EXPIRY</div><div style={{ textAlign: "center" }}>ADJUST</div>
+        </div>
+        {filtered.map((item, i) => { const stk = Number(item.Stock) || 0; const sc = stk <= 0 ? "#ff6b6b" : stk <= 5 ? "#ffd700" : "#00e5a0"; return (
+          <div key={i} style={{ display: "grid", gridTemplateColumns: "110px 1fr 110px 110px 85px 95px 105px 130px", padding: "8px 12px", borderBottom: "1px solid rgba(255,255,255,0.03)", alignItems: "center", background: stk <= 0 ? "rgba(255,50,50,0.03)" : stk <= 5 ? "rgba(255,200,0,0.03)" : "transparent" }}>
+            <div style={{ color: "rgba(255,255,255,0.33)", fontSize: 11 }}>{item.Barcode}</div>
+            <div style={{ color: "#fff", fontSize: 12 }}>{item.ItemName}</div>
+            <div style={{ color: "rgba(0,180,255,0.7)", fontSize: 11 }}>{item.Company || "—"}</div>
+            <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>{item.Category}</div>
+            <div style={{ color: "#00b4ff", textAlign: "right", fontSize: 12, fontWeight: 700 }}>{fmt(item.Price)}</div>
+            <div style={{ textAlign: "right" }}><span style={{ color: sc, fontWeight: 700, fontSize: 14 }}>{item.Stock}</span>{stk <= 0 && <span style={{ marginLeft: 4, fontSize: 10, color: "#ff6b6b" }}>OUT</span>}{stk > 0 && stk <= 5 && <span style={{ marginLeft: 4, fontSize: 10, color: "#ffd700" }}>LOW</span>}</div>
+            {(() => { const es = getExpiryStatus(item.ExpiryDate); return (<div style={{ textAlign: "center" }}><div style={{ color: es.color, fontSize: 10, fontWeight: 700 }}>{fmtExpiry(item.ExpiryDate)}</div>{item.ExpiryDate && <div style={{ fontSize: 9, color: es.color, opacity: 0.85 }}>{es.label}</div>}</div>); })()}
+            <div style={{ display: "flex", justifyContent: "center", gap: 5 }}>
+              {adjusting === item.Barcode ? (<><input type="number" value={adjVal} onChange={e => setAdjVal(e.target.value)} style={{ ...inSt, width: 68, padding: "5px 7px", textAlign: "center" }} autoFocus onKeyDown={e => e.key === "Enter" && doAdjust(item.Barcode)} /><button className="btn" onClick={() => doAdjust(item.Barcode)} style={{ padding: "5px 8px", background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 11, borderRadius: 5 }}>✓</button><button className="btn" onClick={() => setAdjusting(null)} style={{ padding: "5px 7px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.38)", fontSize: 11, borderRadius: 5 }}>✕</button></>) : (<button className="btn" onClick={() => { setAdjusting(item.Barcode); setAdjVal(item.Stock); }} style={{ padding: "5px 11px", background: "rgba(0,180,255,0.09)", border: "1px solid rgba(0,180,255,0.2)", color: "#00b4ff", fontSize: 11, borderRadius: 5 }}>Set</button>)}
+            </div>
+          </div>
+        );})}
+      </div>
+    </div>
+  );
+}
+
+// -------------------- CustomersTab (simplified, with full functionality) --------------------
+function CustomersTab({ customers, setCustomers, safeCallScript, sales, currentUser }) {
+  const [filterName, setFilterName] = useState("");
+  const [filterCell, setFilterCell] = useState("");
+  const [filterBill, setFilterBill] = useState("");
+  const [filterDate, setFilterDate] = useState("");
+  const [showPayModal, setShowPayModal] = useState(false);
+  const [ledgerCustomer, setLedgerCustomer] = useState(null);
+  const [showAddCustomer, setShowAddCustomer] = useState(false);
+
+  const filtered = customers.filter(c => {
+    if (filterName && !c.Name?.toLowerCase().includes(filterName.toLowerCase())) return false;
+    if (filterCell && !c.CellNo?.includes(filterCell)) return false;
+    if (filterBill && !c.BillNo?.includes(filterBill)) return false;
+    return true;
+  });
+
+  const getCustomerSales = (c) => {
+    const billNos = (c.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
+    return billNos.map(bn => sales?.find(s => s.BillNo === bn.padStart(4, "0") || s.BillNo === bn)).filter(Boolean);
+  };
+
+  const getPending = (c) => {
+    const billNos = (c.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
+    const totalBills = billNos.reduce((s, bn) => {
+      const sale = sales.find(sale => sale.BillNo === bn);
+      if (!sale) return s;
+      if (sale.PaymentMethod === "Credit") return s + parseFloat(sale.GrandTotal || 0);
+      return s;
+    }, 0);
+    const totalPaid = (c.payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0);
+    return Math.max(0, totalBills - totalPaid);
+  };
+  const getTotalReceived = (c) => (c.payments || []).filter(p => !filterDate || p.date === filterDate).reduce((s, p) => s + parseFloat(p.amount || 0), 0);
+
+  const exportCSV = () => {
+    const header = "Name,CellNo,TotalBills,TotalPaid,Pending\n";
+    const rows = filtered.map(c => {
+      const totalBills = getCustomerSales(c).reduce((s, sale) => s + parseFloat(sale.GrandTotal || 0), 0);
+      const totalPaid = (c.payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0);
+      const pending = Math.max(0, totalBills - totalPaid);
+      return `"${(c.Name || "").replace(/"/g, '""')}","${(c.CellNo || "").replace(/"/g, '""')}","${totalBills}","${totalPaid}","${pending}"`;
+    }).join("\n");
+    const blob = new Blob([header + rows], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Customers_${new Date().toLocaleDateString("en-GB").replace(/\//g, "-")}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 11, marginBottom: 16, flexWrap: "wrap" }}>
+        <div style={{ padding: "11px 18px", background: "rgba(0,180,255,0.05)", border: "1px solid rgba(0,180,255,0.2)", borderRadius: 10 }}><div style={{ color: "#00b4ff", fontSize: 22, fontWeight: 800 }}>{customers.length}</div><div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>Total Customers</div></div>
+        <div style={{ padding: "11px 18px", background: "rgba(255,80,80,0.05)", border: "1px solid rgba(255,80,80,0.2)", borderRadius: 10 }}><div style={{ color: "#ff6b6b", fontSize: 22, fontWeight: 800 }}>PKR {fmt(filtered.reduce((s, c) => s + getPending(c), 0))}</div><div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>Total Pending{filterDate ? " (filtered)" : ""}</div></div>
+        <div style={{ padding: "11px 18px", background: "rgba(0,229,160,0.05)", border: "1px solid rgba(0,229,160,0.2)", borderRadius: 10 }}><div style={{ color: "#00e5a0", fontSize: 22, fontWeight: 800 }}>PKR {fmt(filtered.reduce((s, c) => s + getTotalReceived(c), 0))}</div><div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>Total Received{filterDate ? " (filtered)" : ""}</div></div>
+      </div>
+
+      <div style={{ display: "flex", gap: 9, marginBottom: 13, flexWrap: "wrap", alignItems: "center" }}>
+        <input value={filterName} onChange={e => setFilterName(e.target.value)} placeholder="Filter by Name..." style={{ ...inSt, maxWidth: 180 }} />
+        <input value={filterCell} onChange={e => setFilterCell(e.target.value)} placeholder="Filter by Cell#..." style={{ ...inSt, maxWidth: 160 }} />
+        <input value={filterBill} onChange={e => setFilterBill(e.target.value)} placeholder="Filter by Bill#..." style={{ ...inSt, maxWidth: 140 }} />
+        <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} style={{ ...inSt, maxWidth: 160 }} title="Filter received payments by date" />
+        <button className="btn" onClick={() => { setFilterName(""); setFilterCell(""); setFilterBill(""); setFilterDate(""); }} style={{ padding: "9px 13px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.45)", borderRadius: 7 }}>Clear</button>
+        <button className="btn" onClick={() => setShowAddCustomer(true)} style={{ padding: "9px 16px", background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>+ Add Customer</button>
+        {currentUser?.Role === "admin" && (<button className="btn" onClick={() => setShowPayModal(true)} style={{ padding: "9px 16px", background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>💰 Receive Payment</button>)}
+        <button className="btn" onClick={exportCSV} style={{ marginLeft: "auto", padding: "9px 16px", background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>📥 Export CSV</button>
+      </div>
+
+      <div style={{ background: "rgba(255,255,255,0.015)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: currentUser?.Role === "admin" ? "1fr 160px 1fr 110px 110px 70px" : "1fr 160px 1fr 110px 110px", padding: "8px 14px", background: "rgba(0,180,255,0.07)", color: "rgba(0,180,255,0.72)", fontSize: 10, letterSpacing: 2, fontWeight: 700 }}>
+          <div>NAME</div><div>CELL NUMBER</div><div>BILL NO(S)</div><div style={{ textAlign: "right" }}>TOTAL BILLS</div><div style={{ textAlign: "right" }}>PENDING</div>{currentUser?.Role === "admin" && <div style={{ textAlign: "center" }}>ACTION</div>}
+        </div>
+        <div style={{ maxHeight: 500, overflowY: "auto" }}>
+          {filtered.length === 0 ? (<div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 140, color: "rgba(255,255,255,0.2)", gap: 8 }}><div style={{ fontSize: 30 }}>👥</div><div style={{ fontSize: 12 }}>No customers found</div></div>) : filtered.map((c, i) => {
+            const totalBills = getCustomerSales(c).reduce((s, sale) => s + parseFloat(sale.GrandTotal || 0), 0);
+            const pending = getPending(c);
+            return (<div key={i} onClick={() => setLedgerCustomer(c)} style={{ display: "grid", gridTemplateColumns: currentUser?.Role === "admin" ? "1fr 160px 1fr 110px 110px 70px" : "1fr 160px 1fr 110px 110px", padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.035)", alignItems: "center", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.background = "rgba(0,180,255,0.05)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}><div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#0062ff,#00b4ff)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{c.Name?.[0]?.toUpperCase() || "?"}</div><span style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{c.Name || "—"}</span></div>
+              <div style={{ color: "rgba(0,180,255,0.8)", fontSize: 12, fontFamily: "monospace" }}>{c.CellNo || "—"}</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>{(c.BillNo || "").split(",").filter(Boolean).map(b => (<span key={b} style={{ padding: "2px 8px", borderRadius: 12, background: "rgba(0,180,255,0.1)", border: "1px solid rgba(0,180,255,0.2)", color: "#00b4ff", fontSize: 10, fontWeight: 700 }}>#{b.trim()}</span>))}</div>
+              <div style={{ textAlign: "right", color: "#00e5a0", fontSize: 12, fontWeight: 700 }}>PKR {fmt(totalBills)}</div>
+              <div style={{ textAlign: "right", color: pending > 0 ? "#ff6b6b" : "#00e5a0", fontSize: 12, fontWeight: 700 }}>{pending > 0 ? `PKR ${fmt(pending)}` : "✓ Paid"}</div>
+              {currentUser?.Role === "admin" && (<div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 5 }}><button className="btn" onClick={e => { e.stopPropagation(); /* edit */ }} style={{ padding: "4px 10px", background: "rgba(0,180,255,0.1)", border: "1px solid rgba(0,180,255,0.2)", color: "#00b4ff", fontSize: 11, borderRadius: 5 }}>Edit</button><button className="btn" onClick={e => { e.stopPropagation(); if (window.confirm("Delete customer?")) { setCustomers(p => p.filter(x => x.CellNo !== c.CellNo)); safeCallScript({ action: "deleteCustomer", CellNo: c.CellNo }); } }} style={{ padding: "4px 10px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 11, borderRadius: 5 }}>Del</button></div>)}
+            </div>);
+          })}
+        </div>
+      </div>
+
+      {showAddCustomer && <AddCustomerModal customers={customers} setCustomers={setCustomers} safeCallScript={safeCallScript} onClose={() => setShowAddCustomer(false)} />}
+      {showPayModal && <ReceivePaymentModal customers={customers} setCustomers={setCustomers} sales={sales} safeCallScript={safeCallScript} onClose={() => setShowPayModal(false)} />}
+      {ledgerCustomer && <CustomerLedgerModal customer={ledgerCustomer} customers={customers} setCustomers={setCustomers} sales={sales} onClose={() => setLedgerCustomer(null)} safeCallScript={safeCallScript} />}
+    </div>
+  );
+}
+
+// -------------------- AddCustomerModal, ReceivePaymentModal, CustomerLedgerModal (condensed) --------------------
+function AddCustomerModal({ customers, setCustomers, safeCallScript, onClose }) {
+  const [name, setName] = useState(""); const [cell, setCell] = useState(""); const [msg, setMsg] = useState("");
+  const handleSave = async () => {
+    if (!name.trim() || !cell.trim()) { setMsg("Name and Cell# are required."); return; }
+    if (customers.find(c => c.CellNo === cell.trim())) { setMsg("A customer with this cell# already exists."); return; }
+    const newCust = { Name: name.trim(), CellNo: cell.trim(), BillNo: "", payments: [] };
+    setCustomers(p => [...p, newCust]);
+    try { await dbPut("customers", { ...newCust, id: cell.trim() }); } catch(e) {}
+    await safeCallScript({ action: "saveCustomer", Name: name.trim(), CellNo: cell.trim(), BillNo: "" });
+    onClose();
+  };
+  return (<div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ background: "#0c1828", border: "1px solid rgba(0,180,255,0.3)", borderRadius: 14, padding: 24, width: 380 }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 18 }}><div style={{ color: "#00b4ff", fontSize: 14, fontWeight: 700 }}>➕ Add New Customer</div><button className="btn" onClick={onClose} style={{ width: 28, height: 28, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", borderRadius: 6 }}>✕</button></div><div style={{ marginBottom: 12 }}><label style={lbSt}>FULL NAME</label><input value={name} onChange={e => setName(e.target.value)} style={inSt} /></div><div style={{ marginBottom: 14 }}><label style={lbSt}>CELL NUMBER</label><input value={cell} onChange={e => setCell(e.target.value)} style={inSt} onKeyDown={e => e.key === "Enter" && handleSave()} /></div>{msg && <div style={{ marginBottom: 12, color: "#ff6b6b", fontSize: 12 }}>{msg}</div>}<button className="btn" onClick={handleSave} style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>💾 Save Customer</button></div></div>);
+}
+
+function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, onClose }) {
+  const [query, setQuery] = useState(""); const [results, setResults] = useState([]); const [selected, setSelected] = useState(null); const [amount, setAmount] = useState(""); const [note, setNote] = useState("Received"); const [date, setDate] = useState(new Date().toISOString().slice(0,10)); const [msg, setMsg] = useState("");
+  useEffect(() => { const q = query.trim().toLowerCase(); if (!q) { setResults([]); return; } setResults(customers.filter(c => c.Name?.toLowerCase().includes(q) || c.CellNo?.includes(q)).slice(0,8)); }, [query, customers]);
+  const getPending = (c) => { const totalBills = (c.BillNo || "").split(",").filter(Boolean).reduce((s, bn) => { const sale = sales.find(sale => sale.BillNo === bn); if (sale && sale.PaymentMethod === "Credit") return s + parseFloat(sale.GrandTotal || 0); return s; }, 0); const totalPaid = (c.payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0); return Math.max(0, totalBills - totalPaid); };
+  const handleSave = async () => {
+    if (!selected || !amount || parseFloat(amount) <= 0) { setMsg("Select customer and valid amount."); return; }
+    const payment = { date, amount: parseFloat(amount), note: note.trim() || "Received" };
+    setCustomers(prev => prev.map(c => c.CellNo === selected.CellNo ? { ...c, payments: [...(c.payments || []), payment] } : c));
+    try { const dbC = await dbGet("customers", selected.CellNo); if (dbC) await dbPut("customers", { ...dbC, payments: [...(dbC.payments || []), payment] }); } catch(e) {}
+    await safeCallScript({ action: "savePayment", CellNo: selected.CellNo.trim(), date, amount: parseFloat(amount), note: note.trim() || "Received" });
+    // print receipt
+    const w = window.open("", "_blank", "width=400,height=500");
+    if (w) { const pending = getPending(selected); const newPending = pending - parseFloat(amount); w.document.write(`<html><head><title>Payment Receipt</title><style>body{font-family:'Courier New',monospace;padding:20px;font-size:12px}</style></head><body><h2>MART - BAKERY & STORE</h2><div style="text-align:center">Payment Receipt</div><div class="line" style="border-top:1px dashed #000;margin:10px 0"></div><div><strong>Customer:</strong> ${selected.Name}</div><div><strong>Cell:</strong> ${selected.CellNo}</div><div><strong>Date:</strong> ${date}</div><div><strong>Amount Received:</strong> PKR ${fmt(parseFloat(amount))}</div><div><strong>Previous Outstanding:</strong> PKR ${fmt(pending)}</div><div><strong>Remaining Balance:</strong> PKR ${fmt(newPending)}</div><div><strong>Note:</strong> ${note}</div><div class="line" style="border-top:1px dashed #000;margin:10px 0"></div><div style="text-align:center">Thank you!</div></body></html>`); w.document.close(); setTimeout(() => w.print(), 300); } else alert("Allow popups to print receipt");
+    onClose();
+  };
+  const pending = selected ? getPending(selected) : 0;
+  return (<div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ background: "#0c1828", border: "1px solid rgba(0,180,255,0.3)", borderRadius: 14, padding: 24, width: 420 }}><div style={{ display: "flex", justifyContent: "space-between", marginBottom: 18 }}><div style={{ color: "#00b4ff", fontSize: 14, fontWeight: 700 }}>💰 Receive Payment</div><button className="btn" onClick={onClose} style={{ width: 28, height: 28, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", borderRadius: 6 }}>✕</button></div><label style={{ ...lbSt, marginBottom: 5 }}>Search Customer (Name or Cell #)</label><div style={{ position: "relative", marginBottom: 14 }}><input value={query} onChange={e => { setQuery(e.target.value); setSelected(null); }} style={{ ...inSt, width: "100%" }} />{results.length > 0 && !selected && (<div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#0c1828", border: "1px solid rgba(0,180,255,0.28)", borderRadius: 8, zIndex: 10 }}>{results.map((c,i) => (<div key={i} onClick={() => { setSelected(c); setQuery(c.Name); setResults([]); }} style={{ padding: "8px 12px", cursor: "pointer", display: "flex", justifyContent: "space-between" }}><span style={{ color: "#fff" }}>{c.Name}</span><span style={{ color: "rgba(0,180,255,0.7)" }}>{c.CellNo}</span></div>))}</div>)}</div>{selected && (<div style={{ background: "rgba(0,180,255,0.06)", border: "1px solid rgba(0,180,255,0.2)", borderRadius: 9, padding: "10px 14px", marginBottom: 14 }}><div style={{ color: "#fff", fontWeight: 700 }}>{selected.Name}</div><div style={{ color: "rgba(0,180,255,0.7)", fontSize: 11, marginBottom: 8 }}>{selected.CellNo}</div><div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "rgba(255,255,255,0.5)" }}>Outstanding Balance</span><span style={{ color: pending > 0 ? "#ff6b6b" : "#00e5a0", fontWeight: 700 }}>PKR {fmt(pending)}</span></div></div>)}<div style={{ display: "flex", gap: 10, marginBottom: 12 }}><div style={{ flex: 1 }}><label style={{ ...lbSt, marginBottom: 5 }}>Amount (PKR)</label><input type="number" value={amount} onChange={e => setAmount(e.target.value)} style={{ ...inSt, fontSize: 15 }} /></div><div style={{ flex: 1 }}><label style={{ ...lbSt, marginBottom: 5 }}>Date</label><input type="date" value={date} onChange={e => setDate(e.target.value)} style={inSt} /></div></div><div style={{ marginBottom: 14 }}><label style={{ ...lbSt, marginBottom: 5 }}>Note</label><input value={note} onChange={e => setNote(e.target.value)} style={inSt} /></div>{msg && <div style={{ marginBottom: 12, padding: "8px 12px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.3)", borderRadius: 7, color: "#ff6b6b", fontSize: 12 }}>{msg}</div>}<button className="btn" onClick={handleSave} style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>💾 Save and Print</button></div></div>);
+}
+
+function CustomerLedgerModal({ customer, customers, setCustomers, sales, onClose, safeCallScript }) {
+  const billNos = (customer.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
+  const custSales = billNos.map(bn => sales?.find(s => s.BillNo === bn)).filter(Boolean);
+  const debitRows = custSales.map(s => ({ date: s.Date, type: "debit", billNo: s.BillNo, desc: `Bill #${s.BillNo} ${s.PaymentMethod === "Credit" ? "(Credit)" : ""}`, debit: parseFloat(s.GrandTotal || 0), credit: 0 }));
+  const creditRows = (customer.payments || []).map((p, i) => ({ date: p.date, type: "credit", billNo: null, desc: `Payment Received${p.note ? " — " + p.note : ""}`, debit: 0, credit: parseFloat(p.amount || 0), payIndex: i }));
+  const allRows = [...debitRows, ...creditRows].sort((a, b) => new Date(a.date.replace(/(\d+)\/(\d+)\/(\d+)/, "$3-$2-$1")) - new Date(b.date.replace(/(\d+)\/(\d+)\/(\d+)/, "$3-$2-$1")));
+  let running = 0; const rows = allRows.map(r => { running = running + r.debit - r.credit; return { ...r, balance: running }; });
+  const totalBills = debitRows.reduce((s, r) => s + r.debit, 0);
+  const totalPaid = creditRows.reduce((s, r) => s + r.credit, 0);
+  const pending = Math.max(0, totalBills - totalPaid);
+  const downloadPDF = () => {
+    let tableRows = ""; rows.forEach(r => { tableRows += `<tr><td>${r.date || "—"}</td><td>${r.desc}${r.billNo ? ` (#${r.billNo})` : ""}</td><td style="text-align:right">${r.debit > 0 ? `PKR ${r.debit.toLocaleString()}` : "—"}</td><td style="text-align:right">${r.credit > 0 ? `PKR ${r.credit.toLocaleString()}` : "—"}</td><td style="text-align:right;font-weight:bold">${r.balance > 0 ? `PKR ${r.balance.toLocaleString()}` : "NIL"}</td></tr>`; });
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;color:#000;background:#fff;padding:30px}h1{font-size:20px;text-align:center;margin-bottom:4px}.sub{text-align:center;color:#555;font-size:12px;margin-bottom:20px}.info-box{display:flex;gap:30px;margin-bottom:20px;padding:12px 16px;border:1px solid #ddd;border-radius:6px;background:#f9f9f9}.info-item{display:flex;flex-direction:column;gap:2px}.info-label{color:#777;font-size:10px;text-transform:uppercase}.info-val{font-weight:bold;font-size:14px}table{width:100%;border-collapse:collapse;margin-bottom:20px}th{background:#0c1828;color:#fff;padding:8px 10px;text-align:left;font-size:11px}td{padding:7px 10px;border-bottom:1px solid #eee}tr:nth-child(even){background:#f7f7f7}.footer{text-align:center;color:#aaa;font-size:10px;margin-top:10px}</style></head><body><h1>MART — BAKERY & STORES</h1><div class="sub">Customer Account Statement</div><div class="info-box"><div class="info-item"><span class="info-label">Customer Name</span><span class="info-val">${customer.Name}</span></div><div class="info-item"><span class="info-label">Cell Number</span><span class="info-val">${customer.CellNo || "—"}</span></div><div class="info-item"><span class="info-label">Total Billed</span><span class="info-val" style="color:#c00">PKR ${totalBills.toLocaleString()}</span></div><div class="info-item"><span class="info-label">Total Paid</span><span class="info-val" style="color:#070">PKR ${totalPaid.toLocaleString()}</span></div><div class="info-item"><span class="info-label">Balance Due</span><span class="info-val" style="color:${pending > 0 ? "#c00" : "#070"}">${pending > 0 ? `PKR ${pending.toLocaleString()}` : "CLEAR"}</span></div></div><table><thead><tr><th>Date</th><th>Description</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th><th style="text-align:right">Balance</th></tr></thead><tbody>${tableRows}</tbody></table><div class="footer">Generated by itKINS POS System · itkins.com · 0304-7414437</div><br/></body></html>`;
+    const w = window.open("", "_blank", "width=900,height=700"); if (!w) { alert("Allow popups!"); return; } w.document.write(html); w.document.close(); setTimeout(() => { w.focus(); w.print(); }, 450);
+  };
+  return (<div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ background: "#0a0e1a", border: "1px solid rgba(0,180,255,0.3)", borderRadius: 14, padding: 24, width: 720, maxWidth: "96vw", maxHeight: "90vh", display: "flex", flexDirection: "column" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}><div><div style={{ color: "#00b4ff", fontSize: 16, fontWeight: 800 }}>{customer.Name}</div><div style={{ color: "rgba(0,180,255,0.6)", fontSize: 12, fontFamily: "monospace" }}>{customer.CellNo || "—"}</div></div><div style={{ display: "flex", gap: 8 }}><button className="btn" onClick={downloadPDF} style={{ padding: "7px 14px", background: "linear-gradient(135deg,#b45309,#fbbf24)", color: "#000", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>📄 Download PDF (A4)</button><button className="btn" onClick={onClose} style={{ width: 30, height: 30, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", borderRadius: 6, fontSize: 14 }}>✕</button></div></div><div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>{[{ label: "Total Billed", val: `PKR ${fmt(totalBills)}`, color: "#ff6b6b" }, { label: "Total Paid", val: `PKR ${fmt(totalPaid)}`, color: "#00e5a0" }, { label: "Balance Due", val: pending > 0 ? `PKR ${fmt(pending)}` : "✓ CLEAR", color: pending > 0 ? "#ff6b6b" : "#00e5a0" }].map((s,i) => (<div key={i} style={{ flex: 1, minWidth: 140, padding: "9px 14px", background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 9 }}><div style={{ color: "rgba(255,255,255,0.42)", fontSize: 10 }}>{s.label}</div><div style={{ color: s.color, fontWeight: 800, fontSize: 15 }}>{s.val}</div></div>))}</div><div style={{ flex: 1, overflowY: "auto", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}><div style={{ display: "grid", gridTemplateColumns: "100px 1fr 130px 130px 120px 30px", padding: "8px 14px", background: "rgba(0,180,255,0.07)", color: "rgba(0,180,255,0.72)", fontSize: 10, letterSpacing: 2, fontWeight: 700, position: "sticky", top: 0 }}><div>DATE</div><div>DESCRIPTION</div><div style={{ textAlign: "right" }}>DEBIT (Dr)</div><div style={{ textAlign: "right" }}>CREDIT (Cr)</div><div style={{ textAlign: "right" }}>BALANCE</div><div /></div><div style={{ overflowY: "auto", maxHeight: 360 }}>{rows.length === 0 ? (<div style={{ textAlign: "center", padding: 30, color: "rgba(255,255,255,0.2)" }}>No transactions found</div>) : rows.map((r, i) => (<div key={i} style={{ display: "grid", gridTemplateColumns: "100px 1fr 130px 130px 120px 30px", padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.035)", alignItems: "center", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}><div style={{ color: "rgba(255,255,255,0.45)", fontSize: 11 }}>{r.date || "—"}</div><div style={{ color: "#fff", fontSize: 12 }}>{r.desc}{r.billNo ? <span style={{ color: "#00b4ff", marginLeft: 5, fontSize: 10 }}>#{r.billNo}</span> : null}</div><div style={{ textAlign: "right", color: r.debit > 0 ? "#ff6b6b" : "rgba(255,255,255,0.2)", fontSize: 12, fontWeight: r.debit > 0 ? 700 : 400 }}>{r.debit > 0 ? `PKR ${fmt(r.debit)}` : "—"}</div><div style={{ textAlign: "right", color: r.credit > 0 ? "#00e5a0" : "rgba(255,255,255,0.2)", fontSize: 12, fontWeight: r.credit > 0 ? 700 : 400 }}>{r.credit > 0 ? `PKR ${fmt(r.credit)}` : "—"}</div><div style={{ textAlign: "right", color: r.balance > 0 ? "#ff6b6b" : "#00e5a0", fontSize: 13, fontWeight: 800 }}>{r.balance > 0 ? `PKR ${fmt(r.balance)}` : "NIL"}</div><div>{r.type === "credit" && (<button className="btn" title="Delete this payment" onClick={async () => { if (!window.confirm("Delete this payment record?")) return; const updatedPayments = (customer.payments || []).filter((_, pi) => pi !== r.payIndex); setCustomers(prev => prev.map(c => c.CellNo === customer.CellNo ? { ...c, payments: updatedPayments } : c)); await safeCallScript({ action: "deletePayment", CellNo: customer.CellNo, Payments: JSON.stringify(updatedPayments) }); onClose(); }} style={{ width: 22, height: 22, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 11, borderRadius: 4, cursor: "pointer" }}>✕</button>)}</div></div>))}</div></div></div></div>);
+}
+
+// -------------------- SetupTab --------------------
+function SetupTab({ sheetStatus, onRefresh, lastSync, safeCallScript }) {
+  const [testResults, setTestResults] = useState(null); const [testing, setTesting] = useState(false); const [repairing, setRepairing] = useState(false); const [repairMsg, setRepairMsg] = useState("");
+  const [dbInfo, setDbInfo] = useState(null);
+  const runTest = async () => { setTesting(true); setTestResults(null); setRepairMsg(""); const r = await deepTestConnections(); setTestResults(r); setTesting(false); };
+  const doRepair = async () => { setRepairing(true); setRepairMsg("Sending repair request..."); await autoRepairSheets(); setRepairMsg("✅ Sent! Waiting 3s..."); await new Promise(r => setTimeout(r, 3000)); const r = await deepTestConnections(); setTestResults(r); setRepairing(false); const allOk = Object.values(r).every(v => v.ok); setRepairMsg(allOk ? "✅ All fixed!" : "⚠ Some issues remain."); };
+  const downloadScript = () => { const txt = getScriptText(); const blob = new Blob([txt], { type: "text/plain;charset=utf-8" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "POS_Script_v7.gs"; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); };
+  const checkDB = async () => { try { const items = await dbGetAll("items"); const sales = await dbGetAll("sales"); const queue = await dbGetAll("pendingQueue"); const lastSyncMeta = await dbGetMeta("lastSync"); setDbInfo({ items: items.length, sales: sales.length, queue: queue.length, lastSync: lastSyncMeta }); } catch (e) { setDbInfo({ error: e.message }); } };
+  const clearDB = async () => { if (!window.confirm("Clear all local offline data? (Google Sheets data stays safe)")) return; const stores = ["items", "categories", "cashiers", "sales", "customers", "returns", "stocklog", "meta"]; for (const s of stores) await dbClear(s); setDbInfo(null); alert("Local cache cleared. Refresh to reload from Google Sheets."); };
+  const SHEET_LABELS = { items: { label: "📦 Items", tabName: "Items" }, categories: { label: "🏷 Categories", tabName: "Categories" }, cashiers: { label: "👤 Cashier", tabName: "Cashier" }, sales: { label: "💰 Sales", tabName: "Sales" }, stocklog: { label: "📉 StockLog", tabName: "StockLog" }, customers: { label: "🧑 Customer", tabName: "Customer" }, returns: { label: "↩ Returns", tabName: "Returns" }, script: { label: "⚡ Apps Script", tabName: null } };
+  return (
+    <div style={{ maxWidth: 720 }}>
+      <div style={{ background: "rgba(0,180,255,0.04)", border: "1px solid rgba(0,180,255,0.2)", borderRadius: 12, padding: 18, marginBottom: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}><div><div style={{ color: "#00b4ff", fontWeight: 700, fontSize: 13 }}>💾 OFFLINE DATABASE (IndexedDB)</div><div style={{ color: "rgba(255,255,255,0.3)", fontSize: 11, marginTop: 3 }}>Local cache for offline & fast load</div></div><div style={{ display: "flex", gap: 7 }}><button className="btn" onClick={checkDB} style={{ padding: "7px 14px", background: "rgba(0,180,255,0.1)", border: "1px solid rgba(0,180,255,0.25)", color: "#00b4ff", fontSize: 11, borderRadius: 6 }}>Check DB</button><button className="btn" onClick={clearDB} style={{ padding: "7px 14px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.25)", color: "#ff6b6b", fontSize: 11, borderRadius: 6 }}>Clear Cache</button></div></div>
+        {dbInfo && (dbInfo.error ? <div style={{ color: "#ff6b6b", fontSize: 12 }}>Error: {dbInfo.error}</div> : <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 9 }}>{[["Items", dbInfo.items], ["Sales", dbInfo.sales], ["Pending Queue", dbInfo.queue], ["Last Sync", dbInfo.lastSync ? new Date(dbInfo.lastSync).toLocaleTimeString("en-PK") : "Never"]].map(([l, v]) => (<div key={l} style={{ background: "rgba(255,255,255,0.025)", borderRadius: 8, padding: "9px 12px" }}><div style={{ color: "rgba(0,180,255,0.7)", fontSize: 10 }}>{l}</div><div style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>{v}</div></div>))})}
+        {!dbInfo && <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 12 }}>Click "Check DB" to see local cache status.</div>}
+        <div style={{ marginTop: 10, color: "rgba(255,255,255,0.3)", fontSize: 11, lineHeight: 1.7 }}>Data loads from local cache instantly on startup. Database syncs in background. Offline sales are queued and sent automatically when internet returns.<br />⚠ IndexedDB is per-browser/PC. Multiple PCs sync via Database.</div>
+      </div>
+
+      <div style={{ background: "rgba(0,180,255,0.04)", border: "1px solid rgba(0,180,255,0.2)", borderRadius: 12, padding: 20, marginBottom: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}><div><div style={{ color: "#00b4ff", fontWeight: 700, fontSize: 13 }}>🔌 CONNECTION & HEADERS TEST</div></div><button className="btn" onClick={runTest} disabled={testing || repairing} style={{ padding: "8px 18px", background: testing ? "rgba(0,180,255,0.1)" : "linear-gradient(135deg,#0062ff,#00b4ff)", border: "none", color: "#fff", fontSize: 12, borderRadius: 7, fontWeight: 700 }}>{testing ? "⏳ Testing..." : "▶ Run Test"}</button></div>
+        {testResults && (<><div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>{Object.entries(SHEET_LABELS).map(([key, { label, tabName }]) => { const r = testResults[key] || { ok: false, reachable: false, missingHeaders: [], extraInfo: "" }; return (<div key={key} style={{ padding: "12px 16px", background: "rgba(255,255,255,0.025)", border: `1px solid ${r.ok ? "rgba(0,200,0,0.3)" : r.reachable ? "rgba(255,200,0,0.3)" : "rgba(255,80,80,0.3)"}`, borderRadius: 9 }}><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}><div style={{ display: "flex", alignItems: "center", gap: 10 }}><div style={{ fontSize: 22 }}>{r.ok ? "✅" : r.reachable ? "⚠️" : "❌"}</div><div><div style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{label}</div><div style={{ color: r.ok ? "#00e080" : r.reachable ? "#ffd700" : "#ff6b6b", fontSize: 11 }}>{r.ok ? r.extraInfo : r.extraInfo || "Not reachable"}</div></div></div>{tabName && <div style={{ fontSize: 11, color: "rgba(255,255,255,0.28)" }}>Tab: <code style={{ color: "rgba(255,255,255,0.6)", background: "rgba(255,255,255,0.06)", padding: "1px 6px", borderRadius: 4 }}>{tabName}</code></div>}</div></div>);})}</div>{!testResults.script?.ok && (<div style={{ display: "flex", gap: 9 }}><button className="btn" onClick={doRepair} disabled={repairing} style={{ padding: "9px 18px", background: "linear-gradient(135deg,#00a651,#00e5a0)", border: "none", color: "#000", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>{repairing ? "⏳ Repairing..." : "🔧 Auto-Repair"}</button><button className="btn" onClick={downloadScript} style={{ padding: "9px 18px", background: "rgba(255,200,0,0.1)", border: "1px solid rgba(255,200,0,0.3)", color: "#ffd700", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>📥 Download Script v7</button></div>)}</>)}
+        {!testResults && !testing && <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 12 }}>Click ▶ Run Test to check all connections.</div>}
+      </div>
+
+      <div style={{ background: "rgba(255,200,0,0.04)", border: "1px solid rgba(255,200,0,0.2)", borderRadius: 12, padding: 18, marginBottom: 18 }}><div style={{ color: "#ffd700", fontWeight: 700, fontSize: 12, marginBottom: 10 }}>📥 APPS SCRIPT - Deploy on Google Sheets</div><button className="btn" onClick={downloadScript} style={{ padding: "10px 22px", background: "linear-gradient(135deg,#ffd700,#ff8c00)", color: "#000", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>📥 Download Script v7 (.gs)</button></div>
+
+      <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: 18, marginBottom: 18 }}><div style={{ color: "#ffd700", fontWeight: 700, fontSize: 12, marginBottom: 10 }}>🔄 SYNC STATUS</div><div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}><div style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>Sheet: <span style={{ color: sheetStatus === "loaded" ? "#00e080" : sheetStatus === "error" ? "#ff6b6b" : "#ffd700", fontWeight: 700 }}>{sheetStatus === "loaded" ? "✓ LIVE" : sheetStatus === "cached" ? "💾 CACHED" : sheetStatus === "error" ? "✗ ERROR" : "◉ DEMO"}</span></div>{lastSync && <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 12 }}>Last: {lastSync.toLocaleString("en-PK")}</div>}<button className="btn" onClick={onRefresh} style={{ padding: "7px 16px", background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 12, borderRadius: 7, fontWeight: 700 }}>🔄 Sync Now</button></div></div>
+
+      <div style={{ background: "rgba(255,200,0,0.04)", border: "1px solid rgba(255,200,0,0.22)", borderRadius: 12, padding: 20 }}><div style={{ color: "#ffd700", fontWeight: 700, fontSize: 13, marginBottom: 14 }}>📋 SOFTWARE LICENSE & PAYMENT TERMS</div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>{[["1st Installation Fee", "PKR 15,000"], ["Annual Fee", "PKR 10,000"], ["Monthly Fee", "PKR 2,000"], ["Due Date", "5th of Each Month"]].map(([l, v]) => (<div key={l} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "10px 14px", border: "1px solid rgba(255,200,0,0.15)" }}><div style={{ color: "rgba(255,200,0,0.7)", fontSize: 10, letterSpacing: 1, marginBottom: 3 }}>{l}</div><div style={{ color: "#fff", fontSize: 15, fontWeight: 700, fontFamily: "Orbitron" }}>{v}</div></div>))}</div><div style={{ background: "rgba(0,180,255,0.05)", border: "1px solid rgba(0,180,255,0.18)", borderRadius: 10, padding: "12px 16px" }}><div style={{ color: "#00b4ff", fontWeight: 700, fontSize: 12, marginBottom: 8 }}>💳 PAYMENT METHOD</div><div style={{ color: "rgba(255,255,255,0.75)", fontSize: 13, lineHeight: 2.1 }}>Bank: <b style={{ color: "#fff" }}>Bank Alfalah</b><br />Account#: <b style={{ color: "#ffd700", fontFamily: "monospace", letterSpacing: 2 }}>0203-1005098235</b><br />Account Name: <b style={{ color: "#fff" }}>Mian Ahmed Umer</b></div></div></div>
+    </div>
+  );
+}
+
+
+// ==================== PDF Generator Helper ====================
+async function downloadStockPDF(filtered, filterCat, filterCo, filterStatus) {
+  const now = new Date().toLocaleString("en-PK");
+  const filterDesc = [filterCat !== "All" ? `Category: ${filterCat}` : "", filterCo !== "All" ? `Company: ${filterCo}` : "", filterStatus !== "All" ? `Status: ${filterStatus === "out" ? "Out of Stock" : filterStatus === "low" ? "Low Stock" : filterStatus === "ok" ? "In Stock" : filterStatus === "expired" ? "Expired Items" : filterStatus === "expiring" ? "Expiring Soon" : filterStatus}` : ""].filter(Boolean).join("  |  ") || "All Items";
+  const totalValue = filtered.reduce((s, i) => s + parseFloat(i.Price || 0) * (Number(i.Stock) || 0), 0);
+  const outCount = filtered.filter(i => (Number(i.Stock) || 0) <= 0).length;
+  const lowCount = filtered.filter(i => (Number(i.Stock) || 0) > 0 && (Number(i.Stock) || 0) <= 5).length;
+  const okCount = filtered.filter(i => (Number(i.Stock) || 0) > 5).length;
+  const rows = filtered.map((item, i) => {
+    const stk = Number(item.Stock) || 0;
+    const statusColor = stk <= 0 ? "#c0392b" : stk <= 5 ? "#d68910" : "#1e8449";
+    const statusText = stk <= 0 ? "OUT" : stk <= 5 ? "LOW" : "OK";
+    const rowBg = i % 2 === 0 ? "#ffffff" : "#f7f9fc";
+    const es = getExpiryStatus(item.ExpiryDate);
+    const expiryColor = es.status === "expired" ? "#c0392b" : es.status === "critical" || es.status === "today" ? "#d35400" : es.status === "warning" ? "#d68910" : es.status === "ok" ? "#1e8449" : "#888";
+    const expiryText = item.ExpiryDate ? fmtExpiry(item.ExpiryDate) : "—";
+    const expiryLabel = item.ExpiryDate ? es.label : "";
+    return `<tr style="background:${rowBg}"><td style="text-align:center;color:#888">${i+1}</td><td style="font-family:monospace;font-size:10px;color:#555">${item.Barcode}</td><td style="font-weight:600;color:#111">${item.ItemName}</td><td style="color:#444">${item.Category || "—"}</td><td style="color:#0057a8">${item.Company || "—"}</td><td style="text-align:right;font-weight:700">PKR ${fmt(item.Price)}</td><td style="text-align:right;color:#555">${item.CostPrice ? "PKR " + fmt(item.CostPrice) : "—"}</td><td style="text-align:right;font-weight:800;font-size:13px;color:${statusColor}">${item.Stock}</td><td style="text-align:center"><div style="color:${expiryColor};font-weight:700;font-size:11px">${expiryText}</div><div style="color:${expiryColor};font-size:9px;opacity:0.85">${expiryLabel}</div></td><td style="text-align:center"><span style="background:${statusColor};color:#fff;padding:2px 9px;border-radius:10px;font-size:10px;font-weight:700;">${statusText}</span></td></tr>`;
+  }).join("");
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Stock Report — itKINS MART</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;color:#222;background:#fff;padding:24px}h1{font-size:22px;color:#0a2540;margin-bottom:3px}.sub{color:#666;font-size:11px;margin-bottom:18px}.cards{display:flex;gap:14px;margin-bottom:20px}.card{flex:1;border-radius:8px;padding:13px 16px;text-align:center}.card .val{font-size:22px;font-weight:800;margin-bottom:3px}.card .lbl{font-size:10px;color:#666;text-transform:uppercase;letter-spacing:0.5px}table{width:100%;border-collapse:collapse}thead th{background:#0a2540;color:#fff;padding:9px 10px;text-align:left;font-size:10px;letter-spacing:0.8px;text-transform:uppercase}tbody td{padding:7px 10px;border-bottom:1px solid #eaecef}.footer{margin-top:24px;text-align:center;font-size:10px;color:#aaa;border-top:1px solid #eee;padding-top:10px}@media print{body{padding:10px}.footer{position:fixed;bottom:0;width:100%}}</style></head><body><h1>📦 Stock Report — itKINS MART &amp; BAKERY</h1><div class="sub">Generated: ${now} &nbsp;·&nbsp; Filter: ${filterDesc} &nbsp;·&nbsp; Total Items: ${filtered.length}</div><div class="cards"><div class="card" style="background:#fde8e8;border:1px solid #f5c6c6"><div class="val" style="color:#c0392b">${outCount}</div><div class="lbl">Out of Stock</div></div><div class="card" style="background:#fef9e7;border:1px solid #f9e4a0"><div class="val" style="color:#d68910">${lowCount}</div><div class="lbl">Low Stock (≤5)</div></div><div class="card" style="background:#e8f8f0;border:1px solid #a9dfbf"><div class="val" style="color:#1e8449">${okCount}</div><div class="lbl">In Stock</div></div><div class="card" style="background:#eaf4ff;border:1px solid #a9ccee"><div class="val" style="color:#1a5276;font-size:16px">PKR ${fmt(totalValue)}</div><div class="lbl">Stock Value</div></div></div><table><thead><tr><th style="width:32px;text-align:center">#</th><th>Barcode</th><th>Item Name</th><th>Category</th><th>Company</th><th style="text-align:right">Price</th><th style="text-align:right">Cost</th><th style="text-align:right">Stock</th><th style="text-align:center">Expiry</th><th style="text-align:center">Status</th></tr></thead><tbody>${rows}</tbody></table><div class="footer">itKINS POS System &nbsp;·&nbsp; Designed by itkins.com &nbsp;|&nbsp; 0304-7414437</div><script>window.onload = () => { window.print(); }</script></body></html>`;
+  const w = window.open("", "_blank", "width=960,height=720");
+  if (!w) { alert("Please allow popups for this page to download PDF!"); return; }
+  w.document.write(html); w.document.close();
+}
+
+// ─── SHARED STYLES (must be defined before any component that uses them) ───
+const inSt = { padding: "9px 12px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(0,180,255,0.22)", borderRadius: 7, color: "#fff", fontSize: 13, outline: "none", width: "100%" };
+const slSt = { padding: "9px 12px", background: "#0c1828", border: "1px solid rgba(0,180,255,0.22)", borderRadius: 7, color: "#fff", fontSize: 13, outline: "none", cursor: "pointer" };
+const lbSt = { display: "block", color: "rgba(0,180,255,0.68)", fontSize: 10, letterSpacing: 1.5, marginBottom: 5, fontWeight: 600 };
+
 // ==================== Supporting Components (condensed) ====================
 // We'll include the minimal needed functions/objects for completeness.
 // Since the original code had them, we assume they are present.
