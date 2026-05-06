@@ -333,7 +333,6 @@ function printReceipt(bill) {
     <div class="tr" style="font-size:10px;color:#555"><span>FBR Charges</span><span>PKR 1.00</span></div>
     <div class="dv"></div><div class="tr gr"><span>GRAND TOTAL</span><span>PKR ${fmt(bill.grandTotal)}</span></div>
     <div class="dv"></div>${payHtml}
-     ${bill.refundApplied > 0 ? `<div class="pr" style="color:#ff8c00"><span>Refund Applied (${bill.refundApplied > 0 ? 'Return #' + (bill.payments?.find(p=>p.type==='refund')?.origReturnNo||'') : ''})</span><span>- PKR ${fmt(bill.refundApplied)}</span></div>` : ""}
     <div class="tr" style="font-weight:bold;margin-top:4px"><span>CHANGE RETURNED</span><span>PKR ${fmt(Math.max(0, bill.change || 0))}</span></div>
     <div class="dv"></div><div class="ft">Thank you for shopping at<br><b>Mart, Bakery & Store!</b></div>
     <div style="text-align:center;font-size:9px;margin-top:3px;color:#555">Designed by itkins.com | 0304-7414437</div>
@@ -2480,13 +2479,33 @@ function SalesTab({ sales, setSales }) {
   const filtered    = sales.filter(s => filterDateMatch(s.Date, filterDate) && (filterCashier === "All" || s.Cashier === filterCashier));
   const totalRev    = filtered.reduce((s, r) => s + parseFloat(r.GrandTotal || 0), 0);
   const totalDisc   = filtered.reduce((s, r) => s + parseFloat(r.Discount || 0), 0);
-  // FBR = PKR 1 per bill (as per receipt logic)
-  const totalFBR    = filtered.reduce((s, r) => s + parseFloat(r.FBR || 1), 0);
+  
 
-  const reprintBill = sale => {
-    const items = safeParseItems(sale.ItemsDetail);
-    printReceipt({ billNo: sale.BillNo, date: sale.Date, time: sale.Time, cashier: sale.Cashier, items, subTotal: parseFloat(sale.GrandTotal || 0) - 1 + parseFloat(sale.Discount || 0), totalDiscount: parseFloat(sale.Discount || 0), billDiscount: 0, billDiscountPct: 0, grandTotal: parseFloat(sale.GrandTotal || 0), payments: [{ type: "cash", amount: parseFloat(sale.GrandTotal || 0), last4: "" }], change: 0, customerName: sale.CustomerName || "", customerCell: sale.CustomerCell || "" });
-  };
+ const reprintBill = sale => {
+  const items = safeParseItems(sale.ItemsDetail);
+  const subTotal = items.reduce((s, i) => s + parseFloat(i.Price||0) * (parseInt(i.qty)||1), 0);
+  const itemDiscount = items.reduce((s, i) => s + parseFloat(i.Discount||0) * (parseInt(i.qty)||1), 0);
+  const totalDiscount = parseFloat(sale.Discount || 0);
+  const grandTotal = parseFloat(sale.GrandTotal || 0);
+  printReceipt({
+    billNo: sale.BillNo,
+    date: sale.Date,
+    time: sale.Time,
+    cashier: sale.Cashier,
+    items,
+    subTotal,
+    totalDiscount,
+    itemDiscount,
+    billDiscount: Math.max(0, totalDiscount - itemDiscount),
+    billDiscountPct: 0,
+    grandTotal,
+    payments: [{ type: "cash", amount: grandTotal, last4: "" }],
+    change: 0,
+    customerName: sale.CustomerName || "",
+    customerCell: sale.CustomerCell || "",
+    refundApplied: 0,
+  });
+};
 
   return (
     <div>
@@ -2520,7 +2539,7 @@ function SalesTab({ sales, setSales }) {
             })()}
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 12, paddingTop: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", color: "rgba(255,255,255,0.5)", fontSize: 12, marginBottom: 4 }}><span>Total Discount</span><span>− PKR {fmt(viewBill.Discount)}</span></div>
-              <div style={{ display: "flex", justifyContent: "space-between", color: "rgba(255,255,255,0.4)", fontSize: 11, marginBottom: 4 }}><span>FBR Charges</span><span>PKR {fmt(viewBill.FBR || 1)}</span></div>
+              <div style={{ display: "flex", justifyContent: "space-between", color: "rgba(255,255,255,0.4)", fontSize: 11, marginBottom: 4 }}><span>FBR Charges</span><span>PKR 1.00</span></div>
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}><span style={{ color: "#fff", fontSize: 15 }}>GRAND TOTAL</span><span style={{ color: "#00b4ff", fontSize: 18, fontFamily: "Orbitron" }}>PKR {fmt(viewBill.GrandTotal)}</span></div>
             </div>
             <button className="btn" onClick={() => reprintBill(viewBill)} style={{ width: "100%", marginTop: 14, padding: "11px", background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 13, borderRadius: 8, fontWeight: 700 }}>🖨 Reprint This Bill</button>
@@ -2533,7 +2552,7 @@ function SalesTab({ sales, setSales }) {
         {[
           { label: "Total Revenue",  value: `PKR ${fmt(totalRev)}`,  color: "#00b4ff",  icon: "💰" },
           { label: "Total Discount", value: `PKR ${fmt(totalDisc)}`, color: "#ffd700",  icon: "🏷️" },
-          { label: "FBR Charges",    value: `PKR ${fmt(totalFBR)}`,  color: "#a78bfa",  icon: "🧾" },
+          { label: "FBR Charges",    value: `PKR ${fmt(filtered.length)}`,  color: "#a78bfa",  icon: "🧾" },
           { label: "Total Bills",    value: filtered.length,          color: "#00e5a0",  icon: "🧮" },
         ].map((card, i) => (
           <div key={i} style={{ background: "rgba(255,255,255,0.025)", border: `1px solid ${card.color}26`, borderRadius: 11, padding: "14px 17px" }}>
@@ -2583,9 +2602,11 @@ function CustomersTab({ customers, setCustomers, safeCallScript, sales, currentU
   const [filterName, setFilterName] = useState("");
   const [filterCell, setFilterCell] = useState("");
   const [filterBill, setFilterBill] = useState("");
+  const [filterDate, setFilterDate] = useState("");
   const [showPayModal, setShowPayModal] = useState(false);
   const [ledgerCustomer, setLedgerCustomer] = useState(null);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState(null);
 
  const filtered = customers.filter(c => {
     if (filterName && !c.Name?.toLowerCase().includes(filterName.toLowerCase())) return false;
@@ -2595,9 +2616,12 @@ function CustomersTab({ customers, setCustomers, safeCallScript, sales, currentU
   });
 
   const getCustomerSales = (c) => {
-    const billNos = (c.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
-    return billNos.map(bn => sales?.find(s => s.BillNo === bn)).filter(Boolean);
-  };
+  const billNos = (c.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
+  return billNos.map(bn => {
+    const padded = bn.padStart(4, "0");
+    return sales?.find(s => s.BillNo === padded || s.BillNo === bn);
+  }).filter(Boolean);
+};
 
   const getPending = (c) => {
     const billNos = (c.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
@@ -2610,7 +2634,22 @@ function CustomersTab({ customers, setCustomers, safeCallScript, sales, currentU
     const totalPaid = (c.payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0);
     return Math.max(0, totalBills - totalPaid);
   };
-
+const getTotalReceived = (c) => {
+  return (c.payments || [])
+    .filter(p => !filterDate || p.date === filterDate)
+    .reduce((s, p) => s + parseFloat(p.amount || 0), 0);
+};
+  
+  {editingCustomer && (
+  <EditCustomerModal
+    customer={editingCustomer}
+    customers={customers}
+    setCustomers={setCustomers}
+    safeCallScript={safeCallScript}
+    onClose={() => setEditingCustomer(null)}
+  />
+)}
+  
   const handleDeleteCustomer = (c, e) => {
     e.stopPropagation();
     if (window.confirm(`Delete customer "${c.Name}"? This cannot be undone.`)) {
@@ -2642,19 +2681,46 @@ function CustomersTab({ customers, setCustomers, safeCallScript, sales, currentU
     <div>
       {/* SUMMARY CARDS */}
       <div style={{ display: "flex", gap: 11, marginBottom: 16, flexWrap: "wrap" }}>
-        <div style={{ padding: "11px 18px", background: "rgba(0,180,255,0.05)", border: "1px solid rgba(0,180,255,0.2)", borderRadius: 10 }}>
-          <div style={{ color: "#00b4ff", fontSize: 22, fontWeight: 800 }}>{customers.length}</div>
-          <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>Total Customers</div>
-        </div>
-        <div style={{ padding: "11px 18px", background: "rgba(255,80,80,0.05)", border: "1px solid rgba(255,80,80,0.2)", borderRadius: 10 }}>
-          <div style={{ color: "#ff6b6b", fontSize: 22, fontWeight: 800 }}>PKR {fmt(customers.reduce((s, c) => s + getPending(c), 0))}</div>
-          <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>Total Pending</div>
-        </div>
-      </div>
+  <div style={{ padding: "11px 18px", background: "rgba(0,180,255,0.05)", border: "1px solid rgba(0,180,255,0.2)", borderRadius: 10 }}>
+    <div style={{ color: "#00b4ff", fontSize: 22, fontWeight: 800 }}>{customers.length}</div>
+    <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>Total Customers</div>
+  </div>
+  <div style={{ padding: "11px 18px", background: "rgba(255,80,80,0.05)", border: "1px solid rgba(255,80,80,0.2)", borderRadius: 10 }}>
+    <div style={{ color: "#ff6b6b", fontSize: 22, fontWeight: 800 }}>PKR {fmt(filtered.reduce((s, c) => s + getPending(c), 0))}</div>
+    <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>Total Pending{filterDate ? " (filtered)" : ""}</div>
+  </div>
+  <div style={{ padding: "11px 18px", background: "rgba(0,229,160,0.05)", border: "1px solid rgba(0,229,160,0.2)", borderRadius: 10 }}>
+    <div style={{ color: "#00e5a0", fontSize: 22, fontWeight: 800 }}>PKR {fmt(filtered.reduce((s, c) => s + getTotalReceived(c), 0))}</div>
+    <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 11 }}>Total Received{filterDate ? " (filtered)" : ""}</div>
+  </div>
+</div>
 
       {/* FILTERS + ACTION BUTTONS */}
       <div style={{ display: "flex", gap: 9, marginBottom: 13, flexWrap: "wrap", alignItems: "center" }}>
-        <input value={filterName} onChange={e => setFilterName(e.target.value)} placeholder="Filter by Name..." style={{ ...inSt, maxWidth: 200 }} />
+  <input value={filterName} onChange={e => setFilterName(e.target.value)} placeholder="Filter by Name..." style={{ ...inSt, maxWidth: 180 }} />
+  <input value={filterCell} onChange={e => setFilterCell(e.target.value)} placeholder="Filter by Cell#..." style={{ ...inSt, maxWidth: 160 }} />
+  <input value={filterBill} onChange={e => setFilterBill(e.target.value)} placeholder="Filter by Bill#..." style={{ ...inSt, maxWidth: 140 }} />
+  <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} style={{ ...inSt, maxWidth: 160 }} title="Filter received payments by date" />
+  <button className="btn" onClick={() => { setFilterName(""); setFilterCell(""); setFilterBill(""); setFilterDate(""); }}
+    style={{ padding: "9px 13px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.45)", borderRadius: 7 }}>
+    Clear
+  </button>
+  <button className="btn" onClick={() => setShowAddCustomer(true)}
+    style={{ padding: "9px 16px", background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>
+    + Add Customer
+  </button>
+  {currentUser?.Role === "admin" && (
+    <button className="btn" onClick={() => setShowPayModal(true)}
+      style={{ padding: "9px 16px", background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>
+      💰 Receive Payment
+    </button>
+  )}
+  <button className="btn" onClick={exportCSV}
+    style={{ marginLeft: "auto", padding: "9px 16px", background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>
+    📥 Export CSV
+  </button>
+</div>
+
         <input value={filterCell} onChange={e => setFilterCell(e.target.value)} placeholder="Filter by Cell#..." style={{ ...inSt, maxWidth: 180 }} />
         <input value={filterBill} onChange={e => setFilterBill(e.target.value)} placeholder="Filter by Bill#..." style={{ ...inSt, maxWidth: 150 }} />
         <button className="btn" onClick={() => { setFilterName(""); setFilterCell(""); setFilterBill(""); }}
@@ -2724,14 +2790,18 @@ function CustomersTab({ customers, setCustomers, safeCallScript, sales, currentU
                   {pending > 0 ? `PKR ${fmt(pending)}` : "✓ Paid"}
                 </div>
 
-                {currentUser?.Role === "admin" && (
-                  <div style={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
-                    <button className="btn" onClick={e => handleDeleteCustomer(c, e)}
-                      style={{ padding: "4px 10px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 11, borderRadius: 5 }}>
-                      Del
-                    </button>
-                  </div>
-                )}
+             {currentUser?.Role === "admin" && (
+  <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 5 }}>
+    <button className="btn" onClick={e => { e.stopPropagation(); setEditingCustomer(c); }}
+      style={{ padding: "4px 10px", background: "rgba(0,180,255,0.1)", border: "1px solid rgba(0,180,255,0.2)", color: "#00b4ff", fontSize: 11, borderRadius: 5 }}>
+      Edit
+    </button>
+    <button className="btn" onClick={e => handleDeleteCustomer(c, e)}
+      style={{ padding: "4px 10px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 11, borderRadius: 5 }}>
+      Del
+    </button>
+  </div>
+)}
               </div>
             );
           })}
@@ -2772,38 +2842,43 @@ function CustomersTab({ customers, setCustomers, safeCallScript, sales, currentU
 }
 
 // ─── ADD CUSTOMER MODAL ───────────────────────────────────────────────────────
-function AddCustomerModal({ customers, setCustomers, safeCallScript, onClose }) {
-  const [name, setName] = useState("");
-  const [cell, setCell] = useState("");
+function EditCustomerModal({ customer, customers, setCustomers, safeCallScript, onClose }) {
+  const [name, setName] = useState(customer.Name || "");
+  const [cell, setCell] = useState(customer.CellNo || "");
   const [msg,  setMsg]  = useState("");
 
   const handleSave = async () => {
     if (!name.trim() || !cell.trim()) { setMsg("Name and Cell# are required."); return; }
-    if (customers.find(c => c.CellNo === cell.trim())) { setMsg("Customer with this cell# already exists."); return; }
-    const newCust = { Name: name.trim(), CellNo: cell.trim(), BillNo: "", payments: [] };
-    setCustomers(p => [...p, newCust]);
-    try { await dbPut("customers", { ...newCust, id: cell.trim() }); } catch(e) {}
-    await safeCallScript({ action: "saveCustomer", Name: newCust.Name, CellNo: newCust.CellNo, BillNo: "" });
+    if (cell !== customer.CellNo && customers.find(c => c.CellNo === cell.trim())) {
+      setMsg("Another customer with this cell# already exists."); return;
+    }
+    const updated = { ...customer, Name: name.trim(), CellNo: cell.trim() };
+    setCustomers(p => p.map(c => c.CellNo === customer.CellNo ? updated : c));
+    try {
+      await dbDelete("customers", customer.CellNo);
+      await dbPut("customers", { ...updated, id: cell.trim() });
+    } catch(e) {}
+    await safeCallScript({ action: "saveCustomer", Name: name.trim(), CellNo: cell.trim(), BillNo: customer.BillNo || "" });
     onClose();
   };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "#0c1828", border: "1px solid rgba(0,229,160,0.3)", borderRadius: 14, padding: 24, width: 380, maxWidth: "95vw" }}>
+      <div style={{ background: "#0c1828", border: "1px solid rgba(0,180,255,0.3)", borderRadius: 14, padding: 24, width: 380, maxWidth: "95vw" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-          <div style={{ color: "#00e5a0", fontSize: 14, fontWeight: 700 }}>👤 Add New Customer</div>
+          <div style={{ color: "#00b4ff", fontSize: 14, fontWeight: 700 }}>✏️ Edit Customer</div>
           <button className="btn" onClick={onClose} style={{ width: 28, height: 28, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", borderRadius: 6, fontSize: 14 }}>✕</button>
         </div>
         <div style={{ marginBottom: 12 }}>
           <label style={lbSt}>FULL NAME</label>
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="Customer name..." style={{ ...inSt }} />
+          <input value={name} onChange={e => setName(e.target.value)} style={{ ...inSt }} />
         </div>
         <div style={{ marginBottom: 14 }}>
           <label style={lbSt}>CELL NUMBER</label>
-          <input value={cell} onChange={e => setCell(e.target.value)} placeholder="e.g. 0300-1234567" style={{ ...inSt }} onKeyDown={e => e.key === "Enter" && handleSave()} />
+          <input value={cell} onChange={e => setCell(e.target.value)} style={{ ...inSt }} onKeyDown={e => e.key === "Enter" && handleSave()} />
         </div>
         {msg && <div style={{ marginBottom: 12, color: "#ff6b6b", fontSize: 12 }}>{msg}</div>}
-        <button className="btn" onClick={handleSave} style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>💾 Save Customer</button>
+        <button className="btn" onClick={handleSave} style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>💾 Save Changes</button>
       </div>
     </div>
   );
@@ -2816,8 +2891,10 @@ function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, o
   const [results,  setResults]  = useState([]);
   const [selected, setSelected] = useState(null);
   const [amount,   setAmount]   = useState("");
+  const [note,     setNote]     = useState("Received");
   const [date,     setDate]     = useState(new Date().toISOString().slice(0, 10));
   const [msg,      setMsg]      = useState("");
+  const saving = useRef(false);
 
   useEffect(() => {
     const q = query.trim().toLowerCase();
@@ -2827,7 +2904,7 @@ function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, o
 
   const getCustomerSales = (c) => {
     const billNos = (c.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
-    return billNos.map(bn => sales?.find(s => s.BillNo === bn)).filter(Boolean);
+    return billNos.map(bn => sales?.find(s => s.BillNo === bn.padStart(4,"0") || s.BillNo === bn)).filter(Boolean);
   };
 
   const getPending = (c) => {
@@ -2840,29 +2917,25 @@ function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, o
   };
 
   const handleSave = async () => {
+    if (saving.current) return;
     if (!selected || !amount || parseFloat(amount) <= 0) { setMsg("Please select a customer and enter a valid amount."); return; }
-    const payment = { date, amount: parseFloat(amount), note: "Received" };
-    // Update React state
+    saving.current = true;
+    const payment = { date, amount: parseFloat(amount), note: note.trim() || "Received" };
     const updated = customers.map(c => c.CellNo === selected.CellNo ? { ...c, payments: [...(c.payments || []), payment] } : c);
     setCustomers(updated);
-    // Update IndexedDB
     try {
       const dbC = await dbGet("customers", selected.CellNo);
-      if (dbC) {
-        await dbPut("customers", { ...dbC, payments: [...(dbC.payments || []), payment] });
-      }
+      if (dbC) await dbPut("customers", { ...dbC, payments: [...(dbC.payments || []), payment] });
     } catch (e) { console.warn("IDB payment save error:", e); }
-    // ✅ Save to Google Sheet
     await safeCallScript({
       action: "savePayment",
       CellNo: selected.CellNo.trim(),
-      date: date,
+      date,
       amount: parseFloat(amount),
-      note: "Received"
+      note: note.trim() || "Received"
     });
-    setMsg(`✅ Payment of PKR ${fmt(amount)} saved for ${selected.Name}`);
-    setAmount("");
-    setTimeout(() => setMsg(""), 3000);
+    saving.current = false;
+    onClose();
   };
 
   const pending = selected ? getPending(selected) : 0;
@@ -2875,7 +2948,6 @@ function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, o
           <button className="btn" onClick={onClose} style={{ width: 28, height: 28, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", borderRadius: 6, fontSize: 14 }}>✕</button>
         </div>
 
-        {/* Search */}
         <label style={{ ...lbSt, marginBottom: 5 }}>Search Customer (Name or Cell #)</label>
         <div style={{ position: "relative", marginBottom: 14 }}>
           <input value={query} onChange={e => { setQuery(e.target.value); setSelected(null); }} placeholder="Type name or number..." style={{ ...inSt, width: "100%", padding: "8px 12px" }} />
@@ -2905,7 +2977,7 @@ function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, o
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+        <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
           <div style={{ flex: 1 }}>
             <label style={{ ...lbSt, marginBottom: 5 }}>Amount (PKR)</label>
             <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Enter amount" style={{ ...inSt, width: "100%", padding: "8px 12px", fontSize: 15 }} />
@@ -2916,13 +2988,19 @@ function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, o
           </div>
         </div>
 
-        {msg && <div style={{ marginBottom: 12, padding: "8px 12px", background: msg.startsWith("✅") ? "rgba(0,229,160,0.1)" : "rgba(255,80,80,0.1)", border: `1px solid ${msg.startsWith("✅") ? "rgba(0,229,160,0.3)" : "rgba(255,80,80,0.3)"}`, borderRadius: 7, color: msg.startsWith("✅") ? "#00e5a0" : "#ff6b6b", fontSize: 12 }}>{msg}</div>}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ ...lbSt, marginBottom: 5 }}>Note</label>
+          <input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Cash received, Bank transfer..." style={{ ...inSt, width: "100%", padding: "8px 12px" }} />
+        </div>
+
+        {msg && <div style={{ marginBottom: 12, padding: "8px 12px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.3)", borderRadius: 7, color: "#ff6b6b", fontSize: 12 }}>{msg}</div>}
 
         <button className="btn" onClick={handleSave} style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>💾 Save Payment</button>
       </div>
     </div>
   );
 }
+
 
 // ─── CUSTOMER LEDGER MODAL ────────────────────────────────────────────────────
 function CustomerLedgerModal({ customer, customers, setCustomers, sales, onClose }) {
@@ -2935,16 +3013,26 @@ function CustomerLedgerModal({ customer, customers, setCustomers, sales, onClose
     .filter(s => s.PaymentMethod === "Credit")
     .map(s => ({ date: s.Date, type: "debit", billNo: s.BillNo, desc: `Bill #${s.BillNo} (Credit)`, debit: parseFloat(s.GrandTotal || 0), credit: 0 }));
   
-  const creditRows = (customer.payments || []).map((p, i) => ({ date: p.date, type: "credit", billNo: null, desc: `Payment Received`, debit: 0, credit: parseFloat(p.amount || 0) }));
-  const allRows = [...debitRows, ...creditRows].sort((a, b) => {
-    // parse dd/mm/yyyy or yyyy-mm-dd
-    const parse = d => { if (!d) return 0; if (d.includes("/")) { const [dd, mm, yy] = d.split("/"); return new Date(`${yy}-${mm}-${dd}`).getTime(); } return new Date(d).getTime(); };
-    return parse(a.date) - parse(b.date);
-  });
+  const creditRows = (customer.payments || []).map((p, i) => ({ date: p.date, type: "credit", billNo: null, desc: `Payment Received${p.note ? " — " + p.note : ""}`, debit: 0, credit: parseFloat(p.amount || 0), payIndex: i }));
 
-  // running balance
-  let running = 0;
-  const rows = allRows.map(r => { running += r.debit - r.credit; return { ...r, balance: running }; });
+  const allRows = [...debitRows, ...creditRows].sort((a, b) => {
+  const parse = d => {
+    if (!d) return 0;
+    if (d.includes("/")) {
+      const parts = d.split("/");
+      const dd = parts[0], mm = parts[1], yy = parts[2];
+      return new Date(yy + "-" + mm + "-" + dd).getTime();
+    }
+    return new Date(d).getTime();
+  };
+  return parse(a.date) - parse(b.date);
+});
+
+let running = 0;
+const rows = allRows.map(r => {
+  running = running + r.debit - r.credit;
+  return { ...r, balance: running };
+});
   const totalBills = debitRows.reduce((s, r) => s + r.debit, 0);
   const totalPaid  = creditRows.reduce((s, r) => s + r.credit, 0);
   const pending    = Math.max(0, totalBills - totalPaid);
@@ -3029,21 +3117,35 @@ function CustomerLedgerModal({ customer, customers, setCustomers, sales, onClose
 
         {/* Ledger table */}
         <div style={{ flex: 1, overflowY: "auto", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 130px 130px 130px", padding: "8px 14px", background: "rgba(0,180,255,0.07)", color: "rgba(0,180,255,0.72)", fontSize: 10, letterSpacing: 2, fontWeight: 700, position: "sticky", top: 0 }}>
-            <div>DATE</div><div>DESCRIPTION</div><div style={{ textAlign: "right" }}>DEBIT (Dr)</div><div style={{ textAlign: "right" }}>CREDIT (Cr)</div><div style={{ textAlign: "right" }}>BALANCE</div>
-          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 130px 130px 120px 30px", padding: "8px 14px", background: "rgba(0,180,255,0.07)", color: "rgba(0,180,255,0.72)", fontSize: 10, letterSpacing: 2, fontWeight: 700, position: "sticky", top: 0 }}>
+  <div>DATE</div><div>DESCRIPTION</div><div style={{ textAlign: "right" }}>DEBIT (Dr)</div><div style={{ textAlign: "right" }}>CREDIT (Cr)</div><div style={{ textAlign: "right" }}>BALANCE</div><div />
+</div>
           <div style={{ overflowY: "auto", maxHeight: 360 }}>
-            {rows.length === 0 ? (
-              <div style={{ textAlign: "center", padding: 30, color: "rgba(255,255,255,0.2)" }}>No transactions found</div>
-            ) : rows.map((r, i) => (
-              <div key={i} style={{ display: "grid", gridTemplateColumns: "100px 1fr 130px 130px 130px", padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.035)", alignItems: "center", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
-                <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 11 }}>{r.date || "—"}</div>
-                <div style={{ color: "#fff", fontSize: 12 }}>{r.desc}{r.billNo ? <span style={{ color: "#00b4ff", marginLeft: 5, fontSize: 10 }}>#{r.billNo}</span> : null}</div>
-                <div style={{ textAlign: "right", color: r.debit > 0 ? "#ff6b6b" : "rgba(255,255,255,0.2)", fontSize: 12, fontWeight: r.debit > 0 ? 700 : 400 }}>{r.debit > 0 ? `PKR ${fmt(r.debit)}` : "—"}</div>
-                <div style={{ textAlign: "right", color: r.credit > 0 ? "#00e5a0" : "rgba(255,255,255,0.2)", fontSize: 12, fontWeight: r.credit > 0 ? 700 : 400 }}>{r.credit > 0 ? `PKR ${fmt(r.credit)}` : "—"}</div>
-                <div style={{ textAlign: "right", color: r.balance > 0 ? "#ff6b6b" : "#00e5a0", fontSize: 13, fontWeight: 800 }}>{r.balance > 0 ? `PKR ${fmt(r.balance)}` : "NIL"}</div>
-              </div>
-            ))}
+
+          {rows.length === 0 ? (
+  <div style={{ textAlign: "center", padding: 30, color: "rgba(255,255,255,0.2)" }}>No transactions found</div>
+) : rows.map((r, i) => (
+  <div key={i} style={{ display: "grid", gridTemplateColumns: "100px 1fr 130px 130px 120px 30px", padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.035)", alignItems: "center", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
+    <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 11 }}>{r.date || "—"}</div>
+    <div style={{ color: "#fff", fontSize: 12 }}>{r.desc}{r.billNo ? <span style={{ color: "#00b4ff", marginLeft: 5, fontSize: 10 }}>#{r.billNo}</span> : null}</div>
+    <div style={{ textAlign: "right", color: r.debit > 0 ? "#ff6b6b" : "rgba(255,255,255,0.2)", fontSize: 12, fontWeight: r.debit > 0 ? 700 : 400 }}>{r.debit > 0 ? `PKR ${fmt(r.debit)}` : "—"}</div>
+    <div style={{ textAlign: "right", color: r.credit > 0 ? "#00e5a0" : "rgba(255,255,255,0.2)", fontSize: 12, fontWeight: r.credit > 0 ? 700 : 400 }}>{r.credit > 0 ? `PKR ${fmt(r.credit)}` : "—"}</div>
+    <div style={{ textAlign: "right", color: r.balance > 0 ? "#ff6b6b" : "#00e5a0", fontSize: 13, fontWeight: 800 }}>{r.balance > 0 ? `PKR ${fmt(r.balance)}` : "NIL"}</div>
+    <div>
+      {r.type === "credit" && (
+        <button className="btn" title="Delete this payment" onClick={() => {
+          if (!window.confirm("Delete this payment record?")) return;
+          const updatedPayments = (customer.payments || []).filter((_, pi) => pi !== r.payIndex);
+          setCustomers(prev => prev.map(c => c.CellNo === customer.CellNo ? { ...c, payments: updatedPayments } : c));
+          dbGet("customers", customer.CellNo).then(dbC => {
+            if (dbC) dbPut("customers", { ...dbC, payments: updatedPayments });
+          }).catch(() => {});
+          onClose();
+        }} style={{ width: 22, height: 22, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 11, borderRadius: 4, padding: 0, cursor: "pointer" }}>✕</button>
+      )}
+    </div>
+  </div>
+))}
           </div>
         </div>
       </div>
