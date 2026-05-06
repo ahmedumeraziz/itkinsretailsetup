@@ -18,7 +18,7 @@ const REQUIRED_HEADERS = {
   items:      ["Barcode","Category","Company","ItemName","Price","CostPrice","Discount","Stock","ExpiryDate"],
   categories: ["CategoryName"],
   cashiers:   ["Name","Username","PIN","Role"],
-  sales:      ["BillNo","Date","Time","Cashier","GrandTotal","Discount","FBR","PaymentMethod","ItemsDetail","CustomerName","CustomerCell"],
+  sales:      ["BillNo","Date","Time","Cashier","GrandTotal","Discount","FBR","PaymentMethod","ItemsDetail","CustomerName","CustomerCell","RefundApplied"],
   stocklog:   ["Date","Barcode","ItemName","StockBefore","StockAfter","Reason"],
   customers:  ["Name","CellNo","BillNo","Payments"],
   returns: ["ReturnNo","OrigBillNo","Date","Time","Cashier","Items","RefundAmount","Reason","UsedInBill"],
@@ -300,16 +300,38 @@ function printReceipt(bill) {
   let itemsHtml = "";
   cats.forEach(cat => {
     itemsHtml += `<div class="cat-hdr">── ${cat} ──</div>`;
-    grouped[cat].forEach(item => {
-      const disc = parseFloat(item.Discount || 0); const lt = item.qty * parseFloat(item.Price || 0) - disc * item.qty;
-      itemsHtml += `<div class="item"><div class="iname">${item.ItemName || item.Barcode}</div><div class="idet">${item.qty} x PKR ${fmt(item.Price)}${disc > 0 ? `  Disc:PKR ${fmt(disc * item.qty)}` : ""}</div><div class="itot">PKR ${fmt(lt)}</div></div>`;
-    });
-  });
-  let payHtml = "";
-  (bill.payments || []).forEach(p => {
-    const amt = parseFloat(p.amount) || 0;
-    if (amt > 0) payHtml += `<div class="pr"><span>${p.type === "cash" ? "Cash" : p.type === "refund" ? "Refund Applied" : `Card(****${p.last4 || "----"})`}</span><span>${p.type === "refund" ? "- " : ""}PKR ${fmt(amt)}</span></div>`;
-  });
+    let payHtml = "";
+(bill.payments || []).forEach(p => {
+  const amt = parseFloat(p.amount) || 0;
+  if (amt > 0) {
+    let methodLabel = "";
+    if (p.type === "cash") methodLabel = "Cash";
+    else if (p.type === "refund") methodLabel = "Refund Applied";
+    else if (p.type === "card") methodLabel = `Card(****${p.last4 || "----"})`;
+    else if (p.type === "debit") methodLabel = "Debit";
+    else methodLabel = p.type;
+    payHtml += `<div class="pr"><span>${methodLabel}</span><span>${p.type === "refund" ? "- " : ""}PKR ${fmt(amt)}</span></div>`;
+  }
+});
+  
+});
+
+let payHtml = "";
+(bill.payments || []).forEach(p => {
+  const amt = parseFloat(p.amount) || 0;
+  if (amt > 0) {
+    let methodLabel = "";
+    if (p.type === "cash") methodLabel = "Cash";
+    else if (p.type === "refund") methodLabel = "Refund Applied";
+    else if (p.type === "card") methodLabel = `Card(****${p.last4 || "----"})`;
+    else if (p.type === "debit") methodLabel = "Debit";
+    else methodLabel = p.type;
+    payHtml += `<div class="pr"><span>${methodLabel}</span><span>${p.type === "refund" ? "- " : ""}PKR ${fmt(amt)}</span></div>`;
+  }
+});
+  
+});
+  
   const billDiscLine = bill.billDiscount > 0 ? `<div class="tr" style="color:#b00"><span>Bill Discount (${bill.billDiscountPct}%)</span><span>- PKR ${fmt(bill.billDiscount)}</span></div>` : "";
   const custName = bill.customerName || ""; const custCell = bill.customerCell || "";
   const custLine = (custName && custName !== "Unknown" && custName.trim() !== "") ? `<div class="bi"><span>Customer: ${custName}</span><span>${custCell}</span></div>` : "";
@@ -328,9 +350,9 @@ function printReceipt(bill) {
     ${custLine}
     <div class="dv"></div>${itemsHtml}<div class="dv"></div>
     <div class="tr"><span>Sub Total</span><span>PKR ${fmt(bill.subTotal)}</span></div>
-    ${bill.totalDiscount > 0 ? `<div class="tr" style="color:#a00"><span>Item Discounts</span><span>- PKR ${fmt(bill.totalDiscount)}</span></div>` : ""}
+   ${bill.refundApplied > 0 ? `<div class="tr" style="color:#ff9500"><span>Refund Applied</span><span>- PKR ${fmt(bill.refundApplied)}</span></div>` : ""}
     ${billDiscLine}
-    <div class="tr" style="font-size:10px;color:#555"><span>FBR Charges</span><span>PKR 1.00</span></div>
+    <div class="tr" style="font-size:10px;color:#555"><span>FBR Charges</span><span>PKR 0.00</span></div>
     <div class="dv"></div><div class="tr gr"><span>GRAND TOTAL</span><span>PKR ${fmt(bill.grandTotal)}</span></div>
     <div class="dv"></div>${payHtml}
     <div class="tr" style="font-weight:bold;margin-top:4px"><span>CHANGE RETURNED</span><span>PKR ${fmt(Math.max(0, bill.change || 0))}</span></div>
@@ -385,7 +407,7 @@ var HEADERS = {
   Items:      ["Barcode","Category","Company","ItemName","Price","CostPrice","Discount","Stock","ExpiryDate"],
   Categories: ["CategoryName"],
   Cashier:    ["Name","Username","PIN","Role"],
-  Sales:      ["BillNo","Date","Time","Cashier","GrandTotal","Discount","FBR","PaymentMethod","ItemsDetail","CustomerName","CustomerCell"],
+  Sales:      ["BillNo","Date","Time","Cashier","GrandTotal","Discount","FBR","PaymentMethod","ItemsDetail","CustomerName","CustomerCell","RefundApplied"],
   StockLog:   ["Date","Barcode","ItemName","StockBefore","StockAfter","Reason"],
   Customer:   ["Name","CellNo","BillNo","Payments"],
   Returns:    ["ReturnNo","OrigBillNo","Date","Time","Cashier","Items","RefundAmount","Reason","UsedInBill"]
@@ -412,6 +434,8 @@ function doPost(e){
       case "saveSale":         result=saveSale(ss,data);         break;
       case "saveCustomer":     result=saveCustomer(ss,data);     break;
       case "savePayment":      result=savePayment(ss,data);      break;
+      case "deletePayment":    result=deletePayment(ss,data);    break;
+      case "deleteCustomer":   result=deleteCustomer(ss,data);   break;
       case "adjustStock":      result=adjustStock(ss,data);      break;
       case "addItem":          result=addItem(ss,data);          break;
       case "editItem":         result=editItem(ss,data);         break;
@@ -468,6 +492,30 @@ function ensureAllHeaders(ss){
   });
   return{status:"ok",fixed:fixed,message:fixed.length>0?"Fixed: "+fixed.join(", "):"All headers OK"};
 }
+function deletePayment(ss,data){
+  var sh=ss.getSheetByName(SHEET_CUSTOMER);
+  if(!sh)return{status:"error",message:"Customer sheet not found"};
+  var hdrMap=getHeaders(sh);
+  var cellIdx=hdrMap["CellNo"];
+  var payIdx=hdrMap["Payments"];
+  if(cellIdx===undefined||payIdx===undefined)return{status:"error",message:"Required columns missing"};
+  var rowNum=findRow(sh,cellIdx,data.CellNo);
+  if(rowNum===-1)return{status:"error",message:"Customer not found"};
+  sh.getRange(rowNum,payIdx+1).setValue(data.Payments);
+  return{status:"ok",message:"Payment updated"};
+}
+
+function deleteCustomer(ss,data){
+  var sh=ss.getSheetByName(SHEET_CUSTOMER);
+  if(!sh)return{status:"error",message:"Customer sheet not found"};
+  var hdrMap=getHeaders(sh);
+  var cellIdx=hdrMap["CellNo"];
+  if(cellIdx===undefined)return{status:"error",message:"CellNo column missing"};
+  var rowNum=findRow(sh,cellIdx,data.CellNo);
+  if(rowNum===-1)return{status:"error",message:"Customer not found"};
+  sh.deleteRow(rowNum);
+  return{status:"ok",message:"Customer deleted"};
+}
 
 function markReturnUsed(ss,data){
   var sh=ss.getSheetByName(SHEET_RETURNS);
@@ -491,10 +539,11 @@ function saveSale(ss,data){
   var salesSh=ss.getSheetByName(SHEET_SALES);
   if(!salesSh)return{status:"error",message:"Sheet not found: "+SHEET_SALES};
   salesSh.appendRow([
-    data.BillNo||"",data.Date||"",data.Time||"",data.Cashier||"",
-    parseFloat(data.GrandTotal)||0,parseFloat(data.Discount)||0,parseFloat(data.FBR)||1,
-    data.PaymentMethod||"",data.ItemsDetail||"[]",data.CustomerName||"Unknown",data.CustomerCell||""
-  ]);
+  data.BillNo||"",data.Date||"",data.Time||"",data.Cashier||"",
+  parseFloat(data.GrandTotal)||0,parseFloat(data.Discount)||0,parseFloat(data.FBR)||0,
+  data.PaymentMethod||"",data.ItemsDetail||"[]",data.CustomerName||"Unknown",data.CustomerCell||"",
+  parseFloat(data.RefundApplied)||0
+]);
 
   // ── Auto-save customer if Credit sale with valid customer info ──
   var custName=(data.CustomerName||"").trim();
@@ -1103,7 +1152,7 @@ if (pCu.length) {
       Cashier: sale.Cashier,
       GrandTotal: sale.GrandTotal,
       Discount: sale.Discount,
-      FBR: 1,
+      FBR: 0,
       PaymentMethod: sale.PaymentMethod || "Cash",
       ItemsDetail: JSON.stringify(sale.items || []),
       CustomerName: isValidCustomer ? customerInfo.Name : "Unknown",
@@ -1475,7 +1524,7 @@ const applyRefund = (refundAmt, returnNo) => {
   const afterItems    = subTotal - itemDiscount;
   const billDiscount  = parseFloat(((afterItems * billDiscPct) / 100).toFixed(2));
   const refundApplied = payments.filter(p => p.type === "refund").reduce((s, p) => s + parseFloat(p.amount || 0), 0);
-  const grandTotal    = afterItems - billDiscount + 1;
+ const grandTotal    = afterItems - billDiscount + 0;
   const netTotal      = Math.max(0, grandTotal - refundApplied);
   const totalReceived = payments.filter(p => p.type !== "refund").reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
   const change        = totalReceived - netTotal;
@@ -1494,7 +1543,7 @@ const applyRefund = (refundAmt, returnNo) => {
     // REPLACE WITH:
     onSaleSaved({
       BillNo: billNo, Date: date, Time: time, Cashier: user.Name,
-      GrandTotal: netTotal, Discount: totalDiscount, FBR: 1,
+      GrandTotal: netTotal, Discount: totalDiscount, FBR: 0,
       PaymentMethod: payMethod,
       ItemsDetail: JSON.stringify(cart),
       items: cart,
@@ -1718,7 +1767,7 @@ const applyRefund = (refundAmt, returnNo) => {
               {billDiscount > 0 && <span style={{ color: "#ffd700", fontSize: 12, marginLeft: "auto" }}>− PKR {fmt(billDiscount)}</span>}
             </div>
             {refundApplied > 0 && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3, color: "#ff9500", fontSize: 12 }}><span>↩ Refund Applied</span><span>− PKR {fmt(refundApplied)}</span></div>}
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 7, color: "rgba(255,255,255,0.3)", fontSize: 11 }}><span>FBR Charges</span><span>PKR 1.00</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 7, color: "rgba(255,255,255,0.3)", fontSize: 11 }}><span>FBR Charges</span><span>PKR 0.00</span></div>
             <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 7 }}>
               <span style={{ color: "#fff", fontSize: 16, fontWeight: 700 }}>GRAND TOTAL</span>
               <span style={{ color: "#00b4ff", fontSize: 20, fontWeight: 800, fontFamily: "Orbitron" }}>PKR {fmt(netTotal)}</span>
@@ -2495,7 +2544,7 @@ function SalesTab({ sales, setSales }) {
     change: 0,
     customerName: sale.CustomerName || "",
     customerCell: sale.CustomerCell || "",
-    refundApplied: 0,
+    refundApplied: sale.RefundApplied || 0,
   });
 };
 
@@ -2530,8 +2579,12 @@ function SalesTab({ sales, setSales }) {
               ))}</div>;
             })()}
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 12, paddingTop: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", color: "rgba(255,255,255,0.5)", fontSize: 12, marginBottom: 4 }}><span>Total Discount</span><span>− PKR {fmt(viewBill.Discount)}</span></div>
-              <div style={{ display: "flex", justifyContent: "space-between", color: "rgba(255,255,255,0.4)", fontSize: 11, marginBottom: 4 }}><span>FBR Charges</span><span>PKR 1.00</span></div>
+              {viewBill.RefundApplied > 0 && (
+  <div style={{ display: "flex", justifyContent: "space-between", color: "#ff9500", fontSize: 12, marginBottom: 4 }}>
+    <span>Refund Applied</span><span>− PKR {fmt(viewBill.RefundApplied)}</span>
+  </div>
+)}
+              <div style={{ display: "flex", justifyContent: "space-between", color: "rgba(255,255,255,0.4)", fontSize: 11, marginBottom: 4 }}><span>FBR Charges</span><span>PKR 0.00</span></div>
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}><span style={{ color: "#fff", fontSize: 15 }}>GRAND TOTAL</span><span style={{ color: "#00b4ff", fontSize: 18, fontFamily: "Orbitron" }}>PKR {fmt(viewBill.GrandTotal)}</span></div>
             </div>
             <button className="btn" onClick={() => reprintBill(viewBill)} style={{ width: "100%", marginTop: 14, padding: "11px", background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 13, borderRadius: 8, fontWeight: 700 }}>🖨 Reprint This Bill</button>
@@ -2544,7 +2597,7 @@ function SalesTab({ sales, setSales }) {
         {[
           { label: "Total Revenue",  value: `PKR ${fmt(totalRev)}`,  color: "#00b4ff",  icon: "💰" },
           { label: "Total Discount", value: `PKR ${fmt(totalDisc)}`, color: "#ffd700",  icon: "🏷️" },
-          { label: "FBR Charges",    value: `PKR ${fmt(filtered.length)}`,  color: "#a78bfa",  icon: "🧾" },
+         { label: "FBR Charges",    value: `PKR 0`,  color: "#a78bfa",  icon: "🧾" },
           { label: "Total Bills",    value: filtered.length,          color: "#00e5a0",  icon: "🧮" },
         ].map((card, i) => (
           <div key={i} style={{ background: "rgba(255,255,255,0.025)", border: `1px solid ${card.color}26`, borderRadius: 11, padding: "14px 17px" }}>
@@ -2633,13 +2686,14 @@ const getTotalReceived = (c) => {
 };
   
   
-  const handleDeleteCustomer = (c, e) => {
-    e.stopPropagation();
-    if (window.confirm(`Delete customer "${c.Name}"? This cannot be undone.`)) {
-      setCustomers(p => p.filter(x => x.CellNo !== c.CellNo));
-      dbDelete("customers", c.CellNo).catch(() => {});
-    }
-  };
+ const handleDeleteCustomer = async (c, e) => {
+  e.stopPropagation();
+  if (window.confirm(`Delete customer "${c.Name}"? This cannot be undone.`)) {
+    setCustomers(p => p.filter(x => x.CellNo !== c.CellNo));
+    await dbDelete("customers", c.CellNo).catch(() => {});
+    await safeCallScript({ action: "deleteCustomer", CellNo: c.CellNo });
+  }
+};
 
   const exportCSV = () => {
     const header = "Name,CellNo,TotalBills,TotalPaid,Pending\n";
@@ -2780,7 +2834,7 @@ const getTotalReceived = (c) => {
         />
       )}
 
-      {showPayModal && (
+       {showPayModal && (
         <ReceivePaymentModal
           customers={customers}
           setCustomers={setCustomers}
@@ -2790,29 +2844,55 @@ const getTotalReceived = (c) => {
         />
       )}
 
-    {ledgerCustomer && (
+      {ledgerCustomer && (
         <CustomerLedgerModal
           customer={ledgerCustomer}
           customers={customers}
           setCustomers={setCustomers}
           sales={sales}
           onClose={() => setLedgerCustomer(null)}
-        />
-      )}
-
-      {editingCustomer && (
-        <EditCustomerModal
-          customer={editingCustomer}
-          customers={customers}
-          setCustomers={setCustomers}
           safeCallScript={safeCallScript}
-          onClose={() => setEditingCustomer(null)}
         />
       )}
+    
     </div>
   );
 }
 
+function EditCustomerModal({ customer, customers, setCustomers, safeCallScript, onClose }) {
+  const [name, setName] = useState(customer.Name);
+  const [cell, setCell] = useState(customer.CellNo);
+  const [msg, setMsg] = useState("");
+
+  const handleSave = async () => {
+    if (!name.trim() || !cell.trim()) { setMsg("Name and Cell# required"); return; }
+    const updated = { ...customer, Name: name.trim(), CellNo: cell.trim() };
+    setCustomers(prev => prev.map(c => c.CellNo === customer.CellNo ? updated : c));
+    await safeCallScript({ action: "saveCustomer", Name: name.trim(), CellNo: cell.trim(), BillNo: customer.BillNo });
+    onClose();
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: "#0c1828", border: "1px solid rgba(0,180,255,0.3)", borderRadius: 14, padding: 24, width: 380, maxWidth: "95vw" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <div style={{ color: "#00b4ff", fontSize: 14, fontWeight: 700 }}>✏️ Edit Customer</div>
+          <button className="btn" onClick={onClose} style={{ width: 28, height: 28, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", borderRadius: 6, fontSize: 14 }}>✕</button>
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={lbSt}>FULL NAME</label>
+          <input value={name} onChange={e => setName(e.target.value)} style={inSt} placeholder="Customer name..." />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={lbSt}>CELL NUMBER</label>
+          <input value={cell} onChange={e => setCell(e.target.value)} style={inSt} placeholder="e.g. 0300-1234567" />
+        </div>
+        {msg && <div style={{ marginBottom: 12, color: "#ff6b6b", fontSize: 12 }}>{msg}</div>}
+        <button className="btn" onClick={handleSave} style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>💾 Save Changes</button>
+      </div>
+    </div>
+  );
+}
 // ─── ADD CUSTOMER MODAL ───────────────────────────────────────────────────────
 function AddCustomerModal({ customers, setCustomers, safeCallScript, onClose }) {
   const [name, setName] = useState("");
@@ -2854,7 +2934,7 @@ function AddCustomerModal({ customers, setCustomers, safeCallScript, onClose }) 
   );
 }
 
-            
+
 // ─── RECEIVE PAYMENT MODAL ────────────────────────────────────────────────────
 function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, onClose }) {
   const [query,    setQuery]    = useState("");
@@ -2905,7 +2985,6 @@ function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, o
       note: note.trim() || "Received"
     });
     saving.current = false;
-    onClose();
   };
 
   const pending = selected ? getPending(selected) : 0;
@@ -2965,23 +3044,67 @@ function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, o
 
         {msg && <div style={{ marginBottom: 12, padding: "8px 12px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.3)", borderRadius: 7, color: "#ff6b6b", fontSize: 12 }}>{msg}</div>}
 
-        <button className="btn" onClick={handleSave} style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>💾 Save Payment</button>
+<button className="btn" onClick={async () => {
+  if (!selected || !amount || parseFloat(amount) <= 0) { setMsg("Please select a customer and enter a valid amount."); return; }
+  saving.current = true;
+  const payment = { date, amount: parseFloat(amount), note: note.trim() || "Received" };
+  const updated = customers.map(c => c.CellNo === selected.CellNo ? { ...c, payments: [...(c.payments || []), payment] } : c);
+  setCustomers(updated);
+  try {
+    const dbC = await dbGet("customers", selected.CellNo);
+    if (dbC) await dbPut("customers", { ...dbC, payments: [...(dbC.payments || []), payment] });
+  } catch (e) { console.warn("IDB payment save error:", e); }
+  await safeCallScript({
+    action: "savePayment",
+    CellNo: selected.CellNo.trim(),
+    date,
+    amount: parseFloat(amount),
+    note: note.trim() || "Received"
+  });
+  saving.current = false;
+  
+  // Print receipt
+  const w = window.open("", "_blank", "width=400,height=500");
+  if (w) {
+    const pending = getPending(selected);
+    const newPending = pending - parseFloat(amount);
+    w.document.write(`
+      <html><head><title>Payment Receipt</title><style>
+        body{font-family:'Courier New',monospace;padding:20px;font-size:12px}
+        h2{text-align:center}.details{margin:15px 0}.line{border-top:1px dashed #000;margin:10px 0}
+      </style></head><body>
+      <h2>MART - BAKERY & STORE</h2>
+      <div style="text-align:center">Payment Receipt</div>
+      <div class="line"></div>
+      <div class="details">
+        <div><strong>Customer:</strong> ${selected.Name}</div>
+        <div><strong>Cell:</strong> ${selected.CellNo}</div>
+        <div><strong>Date:</strong> ${date}</div>
+        <div><strong>Amount Received:</strong> PKR ${fmt(parseFloat(amount))}</div>
+        <div><strong>Previous Outstanding:</strong> PKR ${fmt(pending)}</div>
+        <div><strong>Remaining Balance:</strong> PKR ${fmt(newPending)}</div>
+        <div><strong>Note:</strong> ${note}</div>
       </div>
-    </div>
-  );
-}
-
+      <div class="line"></div>
+      <div style="text-align:center">Thank you!</div>
+      </body></html>
+    `);
+    w.document.close();
+    setTimeout(() => w.print(), 300);
+  } else {
+    alert("Allow popups to print receipt");
+  }
+  onClose();
+}} style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>💾 Save and Print</button>
 
 // ─── CUSTOMER LEDGER MODAL ────────────────────────────────────────────────────
-function CustomerLedgerModal({ customer, customers, setCustomers, sales, onClose }) {
+function CustomerLedgerModal({ customer, customers, setCustomers, sales, onClose, safeCallScript }) {
   const billNos = (customer.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
   const custSales = billNos.map(bn => sales?.find(s => s.BillNo === bn)).filter(Boolean);
 
   // Build ledger rows: bills (debit) + payments (credit)
-// REPLACE WITH:
   const debitRows  = custSales
-    .filter(s => s.PaymentMethod === "Credit")
-    .map(s => ({ date: s.Date, type: "debit", billNo: s.BillNo, desc: `Bill #${s.BillNo} (Credit)`, debit: parseFloat(s.GrandTotal || 0), credit: 0 }));
+  .map(s => ({ date: s.Date, type: "debit", billNo: s.BillNo, desc: `Bill #${s.BillNo} ${s.PaymentMethod === "Credit" ? "(Credit)" : ""}`, debit: parseFloat(s.GrandTotal || 0), credit: 0 }));
   
   const creditRows = (customer.payments || []).map((p, i) => ({ date: p.date, type: "credit", billNo: null, desc: `Payment Received${p.note ? " — " + p.note : ""}`, debit: 0, credit: parseFloat(p.amount || 0), payIndex: i }));
 
@@ -3103,15 +3226,18 @@ const rows = allRows.map(r => {
     <div style={{ textAlign: "right", color: r.balance > 0 ? "#ff6b6b" : "#00e5a0", fontSize: 13, fontWeight: 800 }}>{r.balance > 0 ? `PKR ${fmt(r.balance)}` : "NIL"}</div>
     <div>
       {r.type === "credit" && (
-        <button className="btn" title="Delete this payment" onClick={() => {
-          if (!window.confirm("Delete this payment record?")) return;
-          const updatedPayments = (customer.payments || []).filter((_, pi) => pi !== r.payIndex);
-          setCustomers(prev => prev.map(c => c.CellNo === customer.CellNo ? { ...c, payments: updatedPayments } : c));
-          dbGet("customers", customer.CellNo).then(dbC => {
-            if (dbC) dbPut("customers", { ...dbC, payments: updatedPayments });
-          }).catch(() => {});
-          onClose();
-        }} style={{ width: 22, height: 22, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 11, borderRadius: 4, padding: 0, cursor: "pointer" }}>✕</button>
+       <button
+  className="btn"
+  title="Delete this payment"
+  onClick={async () => {
+    if (!window.confirm("Delete this payment record?")) return;
+    const updatedPayments = (customer.payments || []).filter((_, pi) => pi !== r.payIndex);
+    setCustomers(prev => prev.map(c => c.CellNo === customer.CellNo ? { ...c, payments: updatedPayments } : c));
+    await safeCallScript({ action: "deletePayment", CellNo: customer.CellNo, Payments: JSON.stringify(updatedPayments) });
+    onClose();
+  }}
+  style={{ width: 22, height: 22, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 11, borderRadius: 4, padding: 0, cursor: "pointer" }}
+>✕</button>
       )}
     </div>
   </div>
