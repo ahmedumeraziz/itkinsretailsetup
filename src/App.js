@@ -1913,6 +1913,7 @@ function ReturnsTab({ returns }) {
 }
 
 // -------------------- ProfitTab --------------------
+
 function ProfitTab({ sales, items, returns }) {
   const [filterDate, setFilterDate] = useState("");
   const [filterCashier, setFilterCashier] = useState("All");
@@ -1964,7 +1965,7 @@ function ProfitTab({ sales, items, returns }) {
   const topItemsList = Object.entries(topItems).sort((a, b) => b[1].profit - a[1].profit).slice(0, 10);
 
   return (
-    <>
+    <div>
       <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
         <div><label style={{ ...lbSt, marginBottom: 4 }}>Date</label><input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} style={{ ...inSt, maxWidth: 180 }} /></div>
         <div><label style={{ ...lbSt, marginBottom: 4 }}>Cashier</label><select value={filterCashier} onChange={e => setFilterCashier(e.target.value)} style={slSt}><option value="All">All</option>{cashierList.map(c => <option key={c}>{c}</option>)}</select></div>
@@ -2010,9 +2011,11 @@ function ProfitTab({ sales, items, returns }) {
           {topItemsList.length === 0 && <div style={{ padding: 20, color: "rgba(255,255,255,0.2)", textAlign: "center", fontSize: 12 }}>No data</div>}
         </div>
       </div>
-    </>
+    </div>
   );
 }
+
+
 
 
 
