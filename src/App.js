@@ -20,7 +20,7 @@ const REQUIRED_HEADERS = {
   cashiers:   ["Name","Username","PIN","Role"],
   sales:      ["BillNo","Date","Time","Cashier","GrandTotal","Discount","FBR","PaymentMethod","ItemsDetail","CustomerName","CustomerCell"],
   stocklog:   ["Date","Barcode","ItemName","StockBefore","StockAfter","Reason"],
-  customers:  ["Name","CellNo","BillNo"],
+  customers:  ["Name","CellNo","BillNo","Payments"],
   returns: ["ReturnNo","OrigBillNo","Date","Time","Cashier","Items","RefundAmount","Reason","UsedInBill"],
 };
 
