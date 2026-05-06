@@ -1986,7 +1986,6 @@ function ProfitTab({ sales, items, returns }) {
     </div>
   );
 }
-
 // -------------------- StockTab with PDF download --------------------
 function StockTab({ items, setItems, safeCallScript }) {
   const [adjusting, setAdjusting] = useState(null);
