@@ -34,15 +34,13 @@ export function printReceipt(bill) {
   let paymentSection = "";
 
   if (isCredit) {
-    // Credit customer: show debit amount, previous pending, grand total debit
-    const prevPending    = parseFloat(bill.prevPending || 0);
+    const prevPending     = parseFloat(bill.prevPending || 0);
     const grandTotalDebit = parseFloat(bill.grandTotal || 0) + prevPending;
     paymentSection = `
       <div class="dv"></div>
-      <div class="pr"><span>Debit Amount (This Bill)</span><span>PKR ${fmt(bill.grandTotal)}</span></div>
-      ${prevPending > 0 ? `<div class="pr"><span>Previous Pending</span><span>PKR ${fmt(prevPending)}</span></div>` : ""}
-      <div class="pr" style="font-weight:bold;font-size:12px;border-top:1px dashed #000;padding-top:4px;margin-top:4px">
-        <span>GRAND TOTAL DEBIT</span>
+      ${prevPending > 0 ? `<div class="pr"><span>Previous Balance</span><span style="color:#c00">PKR ${fmt(prevPending)}</span></div>` : ""}
+      <div class="pr gr" style="border-top:1px dashed #000;padding-top:5px;margin-top:3px">
+        <span>GRAND TOTAL</span>
         <span style="color:#c00">PKR ${fmt(grandTotalDebit)}</span>
       </div>
       <div style="text-align:center;font-size:10px;margin-top:5px;color:#555">Credit Sale — Please pay by due date</div>`;
@@ -108,7 +106,7 @@ export function printReceipt(bill) {
   ${billDiscLine}
   ${bill.refundApplied > 0 ? `<div class="tr" style="color:#a05000"><span>Refund Applied</span><span>- PKR ${fmt(bill.refundApplied)}</span></div>` : ""}
   <div class="dv"></div>
-  <div class="tr gr"><span>GRAND TOTAL</span><span>PKR ${fmt(bill.grandTotal)}</span></div>
+  <div class="tr gr"><span>${isCredit ? "THIS BILL TOTAL" : "GRAND TOTAL"}</span><span>PKR ${fmt(bill.grandTotal)}</span></div>
   ${paymentSection}
   <div class="dv"></div>
   <div class="ft">Thank you for shopping at<br><b>Mart, Bakery & Store!</b></div>
