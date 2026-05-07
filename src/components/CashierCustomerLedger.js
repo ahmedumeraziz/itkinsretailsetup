@@ -22,14 +22,19 @@ export default function CashierCustomerLedger({ customers, sales, currentBillTot
     ).slice(0, 6));
   }, [query, customers]);
 
+  const normBill = (b) => String(b || "").trim().replace(/^0+/, "") || "0";
+
   const getPending = (c) => {
     const billNos = (c.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
-    const totalBills = billNos.reduce((s, bn) => {
-      const sale = sales.find(s => s.BillNo === bn);
-      return s + parseFloat(sale?.GrandTotal || 0);
+    // Only Credit sales are outstanding debits; normalise both sides for matching
+    const totalCredit = billNos.reduce((s, bn) => {
+      const norm = normBill(bn);
+      const sale = sales.find(s => normBill(s.BillNo) === norm);
+      if (!sale || sale.PaymentMethod !== "Credit") return s;
+      return s + parseFloat(sale.GrandTotal || 0);
     }, 0);
     const totalPaid = (c.payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0);
-    return Math.max(0, totalBills - totalPaid);
+    return Math.max(0, totalCredit - totalPaid);
   };
 
   const handleSelect = (c) => {
@@ -44,8 +49,11 @@ export default function CashierCustomerLedger({ customers, sales, currentBillTot
     onClear();
   };
 
-  const isSelected = selectedName && selectedName.trim() !== "" && selectedName !== "Unknown";
-  const selCustomer = isSelected ? (customers.find(c => c.CellNo === selectedCell) || null) : null;
+  const isSelected  = selectedName && selectedName.trim() !== "" && selectedName !== "Unknown";
+  // Always read fresh from customers array so payments/bills are up-to-date
+  const selCustomer = isSelected && selectedCell
+    ? (customers.find(c => c.CellNo === selectedCell) || null)
+    : null;
   const pending = selCustomer ? getPending(selCustomer) : 0;
 
   return (
@@ -88,12 +96,12 @@ export default function CashierCustomerLedger({ customers, sales, currentBillTot
             <button className="btn" onClick={handleClear} style={{ padding: "4px 9px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 11, borderRadius: 5 }}>✕</button>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            {pending > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between", background: "rgba(255,80,80,0.07)", border: "1px solid rgba(255,80,80,0.2)", borderRadius: 7, padding: "6px 10px" }}>
-                <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 11 }}>Previous Pending</span>
-                <span style={{ color: "#ff6b6b", fontWeight: 700, fontSize: 13 }}>PKR {fmt(pending)}</span>
-              </div>
-            )}
+            <div style={{ display: "flex", justifyContent: "space-between", background: pending > 0 ? "rgba(255,80,80,0.09)" : "rgba(255,255,255,0.03)", border: `1px solid ${pending > 0 ? "rgba(255,80,80,0.3)" : "rgba(255,255,255,0.08)"}`, borderRadius: 7, padding: "6px 10px" }}>
+              <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 11 }}>Previous Pending</span>
+              <span style={{ color: pending > 0 ? "#ff6b6b" : "#00e5a0", fontWeight: 700, fontSize: 13 }}>
+                {pending > 0 ? `PKR ${fmt(pending)}` : "NIL ✓"}
+              </span>
+            </div>
             <div style={{ display: "flex", justifyContent: "space-between", background: "rgba(0,180,255,0.06)", border: "1px solid rgba(0,180,255,0.15)", borderRadius: 7, padding: "6px 10px" }}>
               <span style={{ color: "rgba(255,255,255,0.55)", fontSize: 11 }}>Today's Purchase</span>
               <span style={{ color: "#00b4ff", fontWeight: 700, fontSize: 13 }}>PKR {fmt(currentBillTotal)}</span>
