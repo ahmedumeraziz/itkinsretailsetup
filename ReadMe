@@ -1,0 +1,705 @@
+═══════════════════════════════════════════════════════════════════════════════
+   itKINS MART POS SYSTEM — COMPLETE SETUP & OPERATIONS GUIDE
+   Designed by: Engr. Ahmed Umer | itkins.com | 0304-7414437
+   Version: 5.0 | Last Updated: 2026
+═══════════════════════════════════════════════════════════════════════════════
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 1 — FIRST TIME SETUP (Do this ONCE only)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+STEP 1: Create Google Sheet
+─────────────────────────────
+  1. Go to sheets.google.com
+  2. Create a new spreadsheet
+  3. Name it: "itKINS POS Database"
+  4. Copy the Sheet ID from URL:
+     URL looks like: spreadsheets/d/THIS_IS_YOUR_ID/edit
+     Copy that long ID and save it somewhere
+
+STEP 2: Create Sheet Tabs (7 tabs required)
+─────────────────────────────────────────────
+  Create these tabs inside your spreadsheet:
+  Tab 1: Items
+  Tab 2: Categories
+  Tab 3: Cashier
+  Tab 4: Sales
+  Tab 5: StockLog
+  Tab 6: Customer
+  Tab 7: Returns
+
+  HOW TO CREATE TABS:
+  Click the "+" button at bottom of Google Sheet
+  Right-click tab → Rename
+
+STEP 3: Add Headers to Each Tab
+─────────────────────────────────
+  Items tab headers (Row 1):
+  Barcode | Category | Company | ItemName | Price | CostPrice | Discount | Stock | ExpiryDate
+
+  Categories tab headers:
+  CategoryName
+
+  Cashier tab headers:
+  Name | Username | PIN | Role
+
+  Sales tab headers:
+  BillNo | Date | Time | Cashier | GrandTotal | Discount | FBR | PaymentMethod | ItemsDetail | CustomerName | CustomerCell
+
+  StockLog tab headers:
+  Date | Barcode | ItemName | StockBefore | StockAfter | Reason
+
+  Customer tab headers:
+  Name | CellNo | BillNo
+
+  Returns tab headers:
+  ReturnNo | OrigBillNo | Date | Time | Cashier | Items | RefundAmount | Reason
+
+  NOTE: OR just use Auto-Repair in Setup tab — it creates all headers automatically!
+
+STEP 4: Set Up Apps Script
+────────────────────────────
+  1. In your Google Sheet: Extensions → Apps Script
+  2. Delete ALL existing code in editor
+  3. Open your POS app → Login as Admin
+  4. Go to: Admin → Setup tab
+  5. Click: "📥 Download Script v5 (.gs)"
+  6. Open the downloaded file in Notepad
+  7. Copy ALL the text
+  8. Paste into Apps Script editor
+  9. Click Save (Ctrl+S or the floppy disk icon)
+  10. Click Deploy → New Deployment
+  11. Click gear icon → Web App
+  12. Set "Execute as": Me
+  13. Set "Who has access": Anyone
+  14. Click Deploy
+  15. Copy the /exec URL (looks like: https://script.google.com/macros/s/LONG_ID/exec)
+  16. Click Authorize/Allow when Google asks
+
+STEP 5: Update POS Code Config
+────────────────────────────────
+  Open your POS code file and update these 3 lines at the top:
+
+  const SHEET_ID = "YOUR_SHEET_ID_HERE";
+  → Replace with your Sheet ID from Step 1
+
+  const APPS_SCRIPT_URL = "YOUR_SCRIPT_URL_HERE";
+  → Replace with your /exec URL from Step 4
+
+  const SCRIPT_TOKEN = "itKINS@POS#2024$Secure!";
+  → Change this to your own secret (use same in Apps Script!)
+
+  IMPORTANT: The token must match EXACTLY in both places:
+  - React code: const SCRIPT_TOKEN = "YourToken"
+  - Apps Script: var SECRET_TOKEN = "YourToken"
+
+STEP 6: Set Sheet Sharing
+───────────────────────────
+  1. Click "Share" button in Google Sheet (top right)
+  2. Change "General access" to:
+     → "Viewer" (anyone with link can view — needed for CSV loading)
+  3. Remove any "Editor" access from others
+  4. Your Gmail stays as Editor
+  5. Click Done
+
+  RESULT:
+  ✅ POS can read data (Viewer access)
+  ✅ No one can edit sheet directly
+  ✅ All writes go through secured Apps Script with token
+
+STEP 7: Add First Cashier
+───────────────────────────
+  1. Open your POS app
+  2. Login with demo credentials: admin / 1234
+  3. Go to Admin → Cashiers tab
+  4. Click "+ Add User"
+  5. Add your real admin account
+  6. Add cashier accounts
+  7. Your data saves to Google Sheet automatically
+
+STEP 8: Add Categories and Items
+──────────────────────────────────
+  1. Admin → Categories tab → Add your categories
+  2. Admin → Items tab → Add your items
+  3. Each item needs: Barcode, Name, Price, Cost Price, Stock
+  4. Expiry Date is optional but recommended for dairy/food items
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 2 — DAILY OPERATIONS (Cashier Guide)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+HOW TO MAKE A SALE:
+────────────────────
+  1. Login with your Username and PIN
+  2. On POS screen: scan barcode OR type item name in search box
+  3. Item appears in cart
+  4. Adjust quantity using +/- buttons or type in qty box
+  5. Press ENTER to go back to search (add more items)
+  6. Press ESC to clear search
+  7. Add customer name and cell (optional)
+  8. Enter payment amount in Cash or Card field
+  9. If change shown = you paid correct amount
+  10. Click "🖨 SAVE & PRINT" → Receipt prints automatically
+
+HOW TO MAKE MULTIPLE BILLS AT ONCE:
+─────────────────────────────────────
+  1. Click "+ New Bill" tab at top
+  2. Work on Bill 2 while Bill 1 waits
+  3. Click between bill tabs to switch
+  4. Each bill is independent
+
+HOW TO APPLY BILL DISCOUNT:
+────────────────────────────
+  1. In totals area, find "Bill Discount %"
+  2. Type a percentage (e.g., 10 for 10% off)
+  3. Discount auto-calculates
+
+HOW TO PROCESS RETURN/REFUND:
+────────────────────────────────
+  1. Click "↩ Return" button in top bar
+  2. Type original Bill Number
+  3. Click "Find Bill"
+  4. Select items to return and quantities
+  5. Choose reason
+  6. Click "✓ Process Return & Print"
+  7. Return receipt prints automatically
+  8. Stock is automatically added back
+
+HOW TO APPLY OLD REFUND TO NEW BILL:
+───────────────────────────────────────
+  1. On POS screen right panel: "↩ APPLY REFUND TO THIS BILL"
+  2. Type the old bill number
+  3. Click Find
+  4. Enter refund amount
+  5. Click Apply
+  6. Refund deducted from new bill total
+
+HOW TO USE CALCULATOR:
+───────────────────────
+  1. Click 🧮 button in top bar
+  2. Calculator floats on screen
+  3. You can drag it anywhere
+  4. Keyboard works: numbers, +, -, *, /, Enter, Escape
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 3 — ADMIN OPERATIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ADMIN TABS EXPLAINED:
+──────────────────────
+  📦 Items      → Add, edit, delete products
+  🏷 Categories → Manage product categories
+  👤 Cashiers   → Manage staff accounts and PINs
+  📊 Sales      → View all transactions, filter by date/cashier
+  ↩ Returns     → View all return/refund history
+  💰 Profit     → Revenue, cost, profit analysis by category
+  📉 Stock      → Stock levels, expiry dates, adjust quantities
+  🧑 Customers  → Customer database with purchase history
+  ⚙️ Setup      → Connection test, sync, script download
+
+HOW TO ADD AN ITEM:
+────────────────────
+  1. Items tab → Click "+ Add Item"
+  2. Fill in: Barcode, Item Name, Company
+  3. Fill in: Selling Price, Cost Price
+  4. Fill in: Discount (PKR per item, 0 if none)
+  5. Fill in: Stock Quantity
+  6. Set: Expiry Date (for food/dairy items)
+  7. Select: Category
+  8. Click "✓ Save"
+  → Saves to Google Sheet automatically
+
+HOW TO EDIT AN ITEM:
+─────────────────────
+  1. Items tab → Find item in list
+  2. Click "Edit" button on that row
+  3. Change any fields needed
+  4. Click "✓ Save"
+
+HOW TO DELETE AN ITEM:
+───────────────────────
+  1. Items tab → Find item
+  2. Click "Del" button
+  3. Confirm deletion
+
+HOW TO ADJUST STOCK MANUALLY:
+──────────────────────────────
+  1. Stock tab → Find item
+  2. Click "Set" button
+  3. Type new stock number
+  4. Press Enter or click ✓
+  → Records in StockLog automatically
+
+HOW TO VIEW PROFIT:
+────────────────────
+  1. Profit tab
+  2. Filter by Date, Cashier, or Category
+  3. See: Revenue, Cost, Net Profit, Margin %
+  4. See: Profit by Category table
+  5. See: Top 10 items by profit
+
+  NOTE: Cost price must be set for each item for accurate profit!
+
+HOW TO VIEW EXPIRY STATUS:
+────────────────────────────
+  1. Stock tab → Expiry alert banners show at top
+  2. Red banner = EXPIRED items
+  3. Orange banner = Expiring within 7 days
+  4. Yellow banner = Expiring within 30 days
+  5. Filter dropdown: select "⛔ Expired" or "🕐 Expiring Soon"
+
+HOW TO DOWNLOAD STOCK PDF:
+────────────────────────────
+  1. Stock tab → Apply any filters you want
+  2. Click "📄 Download PDF (X items)" button
+  3. PDF opens in new window and prints
+  4. PDF includes: barcode, name, price, stock, expiry, status
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 4 — SYNC & CONNECTION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+HOW SYNC WORKS:
+────────────────
+  → On startup: Loads from local cache INSTANTLY (no waiting)
+  → Then: Syncs from Google Sheet in background
+  → Every 60 seconds: Auto-syncs if online
+  → Status bar shows: Online/Offline + Last sync time
+  → Click status bar: Force sync immediately
+
+STATUS BAR COLORS:
+───────────────────
+  ✓ Green  = Live synced with Google Sheet
+  💾 Blue  = Using local cache (offline recently synced data)
+  ⟳ Yellow = Currently syncing
+  ⚠ Red    = Error — could not reach Google Sheet
+  ◉ Demo   = Running with demo data (not connected)
+
+OFFLINE MODE:
+──────────────
+  If internet goes out:
+  → POS continues working with cached data
+  → Sales are saved locally AND queued for Google Sheet
+  → When internet returns: queued sales auto-send to Sheet
+  → You never lose a sale
+
+HOW TO TEST CONNECTION:
+────────────────────────
+  1. Admin → Setup tab
+  2. Click "▶ Run Test"
+  3. See status of each sheet tab
+  4. ✅ = Connected and headers OK
+  5. ⚠️ = Connected but missing headers
+  6. ❌ = Cannot reach sheet
+
+HOW TO AUTO-REPAIR HEADERS:
+─────────────────────────────
+  1. Admin → Setup tab → Run Test first
+  2. If any ⚠️ shown: Click "🔧 Auto-Repair"
+  3. Waits 3 seconds then re-tests
+  4. All missing headers added automatically
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 5 — SECURITY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+TOKEN SECURITY SYSTEM:
+───────────────────────
+  All write operations (save sale, add item, etc.) are protected
+  by a secret token. Without the token, requests are blocked.
+
+  Token is set in TWO places — must be IDENTICAL:
+  1. React code: const SCRIPT_TOKEN = "YourToken"
+  2. Apps Script: var SECRET_TOKEN = "YourToken"
+
+  CHANGE YOUR TOKEN TO SOMETHING UNIQUE:
+  Example: "MartBakery@Rawalpindi#2024$Ahmed!"
+  Rule: Use letters, numbers, @, #, $, ! symbols
+
+SHEET ACCESS LEVELS:
+─────────────────────
+  Your Gmail      → Editor (you can change everything)
+  Everyone else   → Viewer only (CSV loading works, no editing)
+  Apps Script     → Writes via token-protected API
+
+  This means:
+  ✅ POS loads data correctly
+  ✅ No one can directly edit your sheet
+  ✅ Fake requests without token = BLOCKED
+
+IF YOU SUSPECT UNAUTHORIZED ACCESS:
+─────────────────────────────────────
+  1. Change SCRIPT_TOKEN in React code
+  2. Change SECRET_TOKEN in Apps Script
+  3. Redeploy Apps Script (new version)
+  4. Update APPS_SCRIPT_URL in React code
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 6 — WHEN SOMETHING GOES WRONG
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+PROBLEM: POS not loading data / showing DEMO data
+───────────────────────────────────────────────────
+  CAUSE: Sheet ID or Script URL is wrong, or sheet is private
+  FIX:
+  1. Check SHEET_ID in code matches your Google Sheet URL
+  2. Check APPS_SCRIPT_URL is correct /exec URL
+  3. Make sure Sheet sharing is set to "Anyone with link - Viewer"
+  4. Admin → Setup → Run Test to see exact error
+
+PROBLEM: Sales not saving to Google Sheet
+──────────────────────────────────────────
+  CAUSE: Apps Script URL wrong, or token mismatch
+  FIX:
+  1. Check SCRIPT_TOKEN in React = SECRET_TOKEN in Apps Script
+  2. Make sure Apps Script is deployed as Web App
+  3. Check "Who has access" = Anyone
+  4. Try: Admin → Setup → Run Test → check Script row
+
+PROBLEM: Items/Sales show old data after changes
+──────────────────────────────────────────────────
+  FIX:
+  1. Click the sync status indicator in top bar
+  2. OR: Admin → Setup → 🔄 Sync Now
+  3. Wait 5-10 seconds for fresh data
+
+PROBLEM: Receipt not printing
+───────────────────────────────
+  CAUSE: Browser blocking popups
+  FIX:
+  1. Look for popup blocked icon in browser address bar
+  2. Click it → Allow popups for this site
+  3. Try printing again
+
+PROBLEM: Apps Script Error after changes
+──────────────────────────────────────────
+  FIX:
+  1. Admin → Setup → Download Script v5
+  2. Go to Apps Script editor
+  3. Delete ALL old code
+  4. Paste new downloaded script
+  5. Save → Deploy → New Version → Deploy
+  6. Copy new /exec URL
+  7. Update APPS_SCRIPT_URL in React code
+
+PROBLEM: "Missing headers" warning in connection test
+───────────────────────────────────────────────────────
+  FIX:
+  Option A: Click "🔧 Auto-Repair" in Setup tab
+  Option B: Manually add missing column headers to Google Sheet
+
+PROBLEM: IndexedDB / Cache issues
+──────────────────────────────────
+  FIX:
+  1. Admin → Setup → Click "Clear Cache"
+  2. Refresh the page
+  3. Data will reload fresh from Google Sheet
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 7 — APPS SCRIPT REDEPLOYMENT (When code changes)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHEN TO REDEPLOY:
+──────────────────
+  → Whenever you download a new script version
+  → Whenever you change the SECRET_TOKEN
+  → Whenever itKINS sends you a script update
+
+HOW TO REDEPLOY APPS SCRIPT:
+──────────────────────────────
+  1. Open Google Sheet → Extensions → Apps Script
+  2. Select ALL code (Ctrl+A) → Delete
+  3. Admin → Setup → Download Script v5
+  4. Open downloaded file → Copy all text
+  5. Paste into Apps Script editor
+  6. Click Save (Ctrl+S)
+  7. Click "Deploy" button (top right)
+  8. Click "Manage Deployments"
+  9. Click pencil/edit icon on your existing deployment
+  10. Version: Select "New Version"
+  11. Click "Deploy"
+  12. Copy the NEW /exec URL (it may be the same or different)
+  13. Update APPS_SCRIPT_URL in your React code if URL changed
+
+IMPORTANT:
+  → Always use "New Version" not "Update existing"
+  → Old URL usually stays the same
+  → If URL changes, update React code immediately
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 8 — BACKUP OPTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+YOUR DATA IS SAFE IN THREE PLACES:
+────────────────────────────────────
+  1. Google Sheet       → Primary database (syncs in real-time)
+  2. IndexedDB (Browser) → Local cache (works offline)
+  3. Google Drive Backup → Daily auto-backup (if set up)
+
+GOOGLE DRIVE DAILY BACKUP (Optional Setup):
+─────────────────────────────────────────────
+  1. Create a folder in Google Drive: "POS Backups"
+  2. Open folder → Copy Folder ID from URL
+     URL: drive.google.com/drive/folders/THIS_IS_FOLDER_ID
+  3. In Apps Script, add the daily backup script
+  4. Set SPREADSHEET_ID and BACKUP_FOLDER_ID
+  5. Run: createDailyBackupTrigger() ONCE
+  6. Allow permissions when Google asks
+  7. Test: Run manualBackup() to verify
+
+  RESULT: Every day at 2 AM, a full copy of your spreadsheet
+  is saved to your Google Drive folder automatically.
+  Old backups (30+ days) are deleted automatically.
+
+MANUAL BACKUP ANYTIME:
+───────────────────────
+  1. Open your Google Sheet
+  2. File → Make a copy
+  3. Save to Drive with today's date as name
+  4. Done
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Backup Code for Google Sheet to Folder and autodelete
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ═══════════════════════════════════════════════════════════════
+//  DAILY BACKUP SCRIPT
+//  Designed by itKINS → Engr. Ahmed Umer (0304-7414437)
+//  Setup: Run createDailyBackupTrigger() ONCE to activate
+// ═══════════════════════════════════════════════════════════════
+
+// ── CONFIG ────────────────────────────────────────────────────
+var SPREADSHEET_ID  = "11xFHs6zVh4ZgNTwtRveTg1Q401pxiCWv8tyOuFfhoiA";  // paste your sheet ID
+var BACKUP_FOLDER_ID = "1hcszl75hKW7i2YW2vjPD3JUtUbm9s4Rm";       // paste your Drive folder ID
+var BACKUP_PREFIX   = "POS_Backup";                 // name prefix for backup files
+var KEEP_DAYS       = 30;                           // delete backups older than this
+
+// ── MAIN BACKUP FUNCTION ──────────────────────────────────────
+function dailyBackup() {
+  try {
+    var ss        = SpreadsheetApp.openById(SPREADSHEET_ID);
+    var folder    = DriveApp.getFolderById(BACKUP_FOLDER_ID);
+    var date      = Utilities.formatDate(new Date(), "Asia/Karachi", "yyyy-MM-dd_HH-mm");
+    var backupName = BACKUP_PREFIX + "_" + date;
+
+    // Make a full copy of the spreadsheet
+    var copy = DriveApp.getFileById(SPREADSHEET_ID).makeCopy(backupName, folder);
+
+    console.log("✅ Backup created: " + backupName);
+
+    // Auto-delete old backups beyond KEEP_DAYS
+    deleteOldBackups(folder);
+
+    // Optional: log to a sheet inside your spreadsheet
+    logBackup(ss, backupName, "SUCCESS");
+
+  } catch(e) {
+    console.error("❌ Backup failed: " + e.toString());
+    // Send email alert on failure (optional)
+    // MailApp.sendEmail("your@email.com", "POS Backup Failed", e.toString());
+  }
+}
+
+// ── DELETE OLD BACKUPS ────────────────────────────────────────
+function deleteOldBackups(folder) {
+  var cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - KEEP_DAYS);
+
+var allFiles = folder.getFiles();
+  var deleted = 0;
+
+  while (allFiles.hasNext()) {
+    var file = allFiles.next();
+    var name = file.getName();
+    // Only delete files that match our backup prefix
+    if (name.startsWith(BACKUP_PREFIX) && file.getDateCreated() < cutoff) {
+      file.setTrashed(true);
+      deleted++;
+      console.log("🗑 Deleted old backup: " + name);
+    }
+  }
+  if (deleted > 0) console.log("Cleaned up " + deleted + " old backup(s)");
+}
+
+// ── LOG BACKUP TO SHEET ───────────────────────────────────────
+function logBackup(ss, backupName, status) {
+  var logSheetName = "BackupLog";
+  var logSheet = ss.getSheetByName(logSheetName);
+
+  // Create log sheet if it doesn't exist
+  if (!logSheet) {
+    logSheet = ss.insertSheet(logSheetName);
+    logSheet.getRange(1, 1, 1, 4).setValues([["Date", "Time", "BackupName", "Status"]]);
+    logSheet.getRange(1, 1, 1, 4).setFontWeight("bold").setBackground("#0a2540").setFontColor("#ffffff");
+  }
+
+  var now  = new Date();
+  var date = Utilities.formatDate(now, "Asia/Karachi", "dd/MM/yyyy");
+  var time = Utilities.formatDate(now, "Asia/Karachi", "hh:mm a");
+
+  logSheet.appendRow([date, time, backupName, status]);
+}
+
+// ── SET UP DAILY TRIGGER (run this ONCE manually) ─────────────
+function createDailyBackupTrigger() {
+  // Delete any existing backup triggers first
+  var triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(function(t) {
+    if (t.getHandlerFunction() === "dailyBackup") {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+
+  // Create new trigger — runs daily at 2:00 AM Pakistan time
+  ScriptApp.newTrigger("dailyBackup")
+    .timeBased()
+    .everyDays(1)
+    .atHour(2)       // 2 AM — change to any hour 0-23
+    .create();
+
+  console.log("✅ Daily backup trigger created! Runs every day at 2 AM.");
+}
+
+// ── MANUAL BACKUP (run anytime from script editor) ────────────
+function manualBackup() {
+  dailyBackup();
+  console.log("✅ Manual backup completed.");
+}
+
+// ── CHECK EXISTING TRIGGERS ───────────────────────────────────
+function listTriggers() {
+  var triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(function(t) {
+    console.log("Trigger: " + t.getHandlerFunction() + " | Type: " + t.getEventType());
+  });
+  if (triggers.length === 0) console.log("No triggers found.");
+}
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 9 — KEYBOARD SHORTCUTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+POS SCREEN SHORTCUTS:
+──────────────────────
+  Scan barcode     → Just scan, auto-adds to cart
+  Search item      → Type in search box
+  Arrow Up/Down    → Navigate search results
+  Enter            → Select highlighted item / confirm qty
+  Escape           → Clear search / go back to search from qty
+  Arrow Up/Down    → In qty box: increase/decrease quantity
+
+CALCULATOR SHORTCUTS:
+──────────────────────
+  0-9              → Numbers
+  + - * /          → Operations  
+  Enter or =       → Calculate result
+  Backspace        → Delete last digit
+  C                → Clear all
+  Escape           → Close calculator
+
+LOGIN SCREEN SHORTCUTS:
+────────────────────────
+  Type numbers     → Goes directly to PIN
+  Backspace        → Delete PIN digit
+  Enter            → Login
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 10 — QUICK REFERENCE CARD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+IMPORTANT IDs (Fill these in):
+────────────────────────────────
+  Google Sheet ID:    ________________________________
+  Apps Script URL:    ________________________________
+  Secret Token:       ________________________________
+  Backup Folder ID:   ________________________________
+
+DEFAULT LOGIN CREDENTIALS:
+────────────────────────────
+  Admin:   username=admin   PIN=1234
+  Cashier: username=rizwan  PIN=5678
+  → CHANGE THESE IMMEDIATELY after first login!
+
+TAB NAMES IN GOOGLE SHEET:
+────────────────────────────
+  Items | Categories | Cashier | Sales | StockLog | Customer | Returns
+
+EXPIRY COLOR CODE:
+───────────────────
+  🔴 Red    = EXPIRED (remove from shelves!)
+  🟠 Orange = Expiring within 7 days (sell quickly)
+  🟡 Yellow = Expiring within 30 days (monitor)
+  🟢 Green  = OK (plenty of time)
+
+STOCK COLOR CODE:
+──────────────────
+  🔴 Red    = Out of stock (0 units)
+  🟡 Yellow = Low stock (1-5 units)
+  🟢 Green  = In stock (6+ units)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 11 — MONTHLY MAINTENANCE CHECKLIST
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DO THESE EVERY MONTH:
+───────────────────────
+  ☐ Check Stock tab for expired items → Remove from shelves
+  ☐ Check Stock tab for low stock items → Reorder
+  ☐ Check Profit tab for monthly revenue summary
+  ☐ Export Customers CSV for marketing
+  ☐ Verify Google Sheet backup folder has recent backups
+  ☐ Admin → Setup → Run Test → Verify all ✅
+  ☐ Pay software fee by 5th of month (PKR 2,000)
+
+DO THESE EVERY 3 MONTHS:
+──────────────────────────
+  ☐ Change your Secret Token for security
+  ☐ Review cashier accounts — remove inactive users
+  ☐ Review and update item prices if needed
+  ☐ Clear browser cache if POS feels slow
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION 12 — SOFTWARE LICENSE & PAYMENT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+FEES:
+──────
+  Installation Fee (One Time):  PKR 15,000
+  Annual Fee:                   PKR 10,000
+  Monthly Fee:                  PKR 2,000
+  Payment Due Date:             5th of each month
+
+BANK DETAILS:
+──────────────
+  Bank:           Bank Alfalah
+  Account Number: 0203-1005098235
+  Account Name:   Mian Ahmed Umer
+
+CONTACT & SUPPORT:
+───────────────────
+  Designer:  Engr. Ahmed Umer
+  Website:   itkins.com
+  Phone:     0304-7414437
+  WhatsApp:  0304-7414437
+
+FOR SUPPORT, PROVIDE:
+──────────────────────
+  → Screenshot of error message
+  → Which browser you are using
+  → What action you were doing when error happened
+
+
+═══════════════════════════════════════════════════════════════════════════════
+   END OF GUIDE — itKINS MART POS v5.0
+   Keep this file safe. Print it and store near your computer.
+═══════════════════════════════════════════════════════════════════════════════
