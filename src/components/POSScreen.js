@@ -152,7 +152,7 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
   const afterItems    = subTotal - itemDiscount;
   const billDiscount  = parseFloat(((afterItems * billDiscPct) / 100).toFixed(2));
   const refundApplied = payments.filter(p => p.type === "refund").reduce((s, p) => s + parseFloat(p.amount || 0), 0);
-  const grandTotal    = afterItems - billDiscount + 1;
+  const grandTotal    = afterItems - billDiscount;
   const netTotal      = Math.max(0, grandTotal - refundApplied);
   const totalReceived = payments.filter(p => p.type !== "refund").reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
   const change        = totalReceived - netTotal;
@@ -169,7 +169,7 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
 
     onSaleSaved({
       BillNo: billNo, Date: date, Time: time, Cashier: user.Name,
-      GrandTotal: netTotal, Discount: totalDiscount, FBR: 1,
+      GrandTotal: netTotal, Discount: totalDiscount, FBR: 0,
       PaymentMethod: payMethod,
       ItemsDetail: JSON.stringify(cart),
       items: cart,
@@ -330,7 +330,6 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
               {billDiscount > 0 && <span style={{ color: "#ffd700", fontSize: 12, marginLeft: "auto" }}>− PKR {fmt(billDiscount)}</span>}
             </div>
             {refundApplied > 0 && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3, color: "#ff9500", fontSize: 12 }}><span>↩ Refund Applied</span><span>− PKR {fmt(refundApplied)}</span></div>}
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 7, color: "rgba(255,255,255,0.3)", fontSize: 11 }}><span>FBR Charges</span><span>PKR 1.00</span></div>
             <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 7 }}>
               <span style={{ color: "#fff", fontSize: 16, fontWeight: 700 }}>GRAND TOTAL</span>
               <span style={{ color: "#00b4ff", fontSize: 20, fontWeight: 800, fontFamily: "Orbitron" }}>PKR {fmt(netTotal)}</span>
