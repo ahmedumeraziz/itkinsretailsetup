@@ -179,10 +179,22 @@ export default function App() {
       }
       // Customers
       if (rawCustomers.length) {
-        const parsed = rawCustomers.map(c => ({
-          ...c,
-          payments: (() => { try { return JSON.parse(c.Payments || "[]"); } catch { return []; } })(),
-        }));
+        // Get current local customers to preserve any payment deletions done locally
+        let localCustomers = [];
+        try { localCustomers = await dbGetAll("customers"); } catch {}
+        const localMap = new Map(localCustomers.map(c => [c.CellNo, c]));
+
+        const parsed = rawCustomers.map(c => {
+          const sheetPayments = (() => { try { return JSON.parse(c.Payments || "[]"); } catch { return []; } })();
+          const localC = localMap.get(c.CellNo);
+          // If local has fewer payments than sheet, respect local (user deleted some)
+          // If local has more, keep local (user added payments offline)
+          const localPay = localC?.payments;
+          const payments = (localPay !== undefined && localPay !== null)
+            ? localPay  // always trust local payments (deletions and additions)
+            : sheetPayments;
+          return { ...c, payments };
+        });
         setCustomers(parsed);
         await dbSaveAll("customers", parsed, "CellNo");
       }
