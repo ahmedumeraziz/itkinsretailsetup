@@ -66,10 +66,20 @@ export function CustomersTab({ customers, setCustomers, safeCallScript, sales, c
   const [filterName,      setFilterName]      = useState("");
   const [filterCell,      setFilterCell]      = useState("");
   const [filterBill,      setFilterBill]      = useState("");
+  const [dateFrom,        setDateFrom]        = useState("");
+  const [dateTo,          setDateTo]          = useState("");
   const [showPayModal,    setShowPayModal]     = useState(false);
   const [ledgerCustomer,  setLedgerCustomer]  = useState(null);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
+
+  // Parse dd/mm/yyyy or yyyy-mm-dd to comparable number
+  function parseDate(d) {
+    if (!d) return 0;
+    if (d.includes("/")) { const [dd,mm,yy] = d.split("/"); return parseInt(`${yy}${mm.padStart(2,"0")}${dd.padStart(2,"0")}`); }
+    return parseInt(d.replace(/-/g,""));
+  }
+  function inputToNum(d) { return d ? parseInt(d.replace(/-/g,"")) : 0; }
 
   const filtered = customers.filter(c => {
     if (filterName && !c.Name?.toLowerCase().includes(filterName.toLowerCase())) return false;
@@ -78,6 +88,17 @@ export function CustomersTab({ customers, setCustomers, safeCallScript, sales, c
       const norm  = normBill(filterBill);
       const bills = (c.BillNo || "").split(",").filter(Boolean).map(b => normBill(b));
       if (!bills.includes(norm)) return false;
+    }
+    // Date filter: check if any of the customer's bills fall in range
+    if (dateFrom || dateTo) {
+      const from = inputToNum(dateFrom);
+      const to   = inputToNum(dateTo) || 99999999;
+      const custSales = getCustomerSalesAll(c, sales);
+      const hasMatch  = custSales.some(s => {
+        const d = parseDate(s.Date);
+        return d >= (from || 0) && d <= to;
+      });
+      if (!hasMatch) return false;
     }
     return true;
   });
@@ -127,10 +148,18 @@ export function CustomersTab({ customers, setCustomers, safeCallScript, sales, c
 
       {/* Filters */}
       <div style={{ display: "flex", gap: 9, marginBottom: 13, flexWrap: "wrap", alignItems: "center" }}>
-        <input value={filterName} onChange={e => setFilterName(e.target.value)} placeholder="Filter by Name..."  style={{ ...inSt, maxWidth: 180 }} />
-        <input value={filterCell} onChange={e => setFilterCell(e.target.value)} placeholder="Filter by Cell#..." style={{ ...inSt, maxWidth: 160 }} />
-        <input value={filterBill} onChange={e => setFilterBill(e.target.value)} placeholder="Filter by Bill#..." style={{ ...inSt, maxWidth: 140 }} />
-        <button className="btn" onClick={() => { setFilterName(""); setFilterCell(""); setFilterBill(""); }}
+        <input value={filterName} onChange={e => setFilterName(e.target.value)} placeholder="Filter by Name..."  style={{ ...inSt, maxWidth: 165 }} />
+        <input value={filterCell} onChange={e => setFilterCell(e.target.value)} placeholder="Filter by Cell#..." style={{ ...inSt, maxWidth: 145 }} />
+        <input value={filterBill} onChange={e => setFilterBill(e.target.value)} placeholder="Filter by Bill#..." style={{ ...inSt, maxWidth: 130 }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <label style={{ color: "rgba(0,180,255,0.6)", fontSize: 10, whiteSpace: "nowrap" }}>From</label>
+          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ ...inSt, maxWidth: 148, padding: "7px 9px", fontSize: 11 }} />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <label style={{ color: "rgba(0,180,255,0.6)", fontSize: 10, whiteSpace: "nowrap" }}>To</label>
+          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ ...inSt, maxWidth: 148, padding: "7px 9px", fontSize: 11 }} />
+        </div>
+        <button className="btn" onClick={() => { setFilterName(""); setFilterCell(""); setFilterBill(""); setDateFrom(""); setDateTo(""); }}
           style={{ padding: "9px 13px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.45)", borderRadius: 7 }}>Clear</button>
         <button className="btn" onClick={() => setShowAddCustomer(true)}
           style={{ padding: "9px 16px", background: "linear-gradient(135deg,#00a651,#00e5a0)", color: "#000", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>+ Add Customer</button>
@@ -381,15 +410,18 @@ function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, o
 
 // ─── CUSTOMER LEDGER MODAL ────────────────────────────────────────────────────
 function CustomerLedgerModal({ customer, customers, setCustomers, sales, onClose }) {
-  const billNos   = (customer.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
-  const custSales = billNos.map(bn => {
+  // Deduplicate bill numbers before building rows
+  const uniqueBillNos = [...new Set(
+    (customer.BillNo || "").split(",").filter(Boolean).map(b => b.trim())
+  )];
+  const custSales = uniqueBillNos.map(bn => {
     const norm = normBill(bn);
     return sales.find(s => normBill(s.BillNo) === norm);
   }).filter(Boolean);
 
   const debitRows = custSales
     .filter(s => s.PaymentMethod === "Credit")
-    .map(s => ({ date: s.Date, type: "debit", billNo: s.BillNo, desc: `Bill #${s.BillNo} (Credit Sale)`, debit: parseFloat(s.GrandTotal || 0), credit: 0 }));
+    .map(s => ({ date: s.Date, type: "debit", billNo: s.BillNo, desc: `Bill #${s.BillNo} (Debit)`, debit: parseFloat(s.GrandTotal || 0), credit: 0 }));
 
   const creditRows = (customer.payments || []).map((p, i) => ({
     date: p.date, type: "credit", billNo: null,
