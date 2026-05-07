@@ -126,8 +126,23 @@ export function SetupTab({ sheetStatus, onRefresh, lastSync, safeCallScript }) {
   const runTest   = async () => { setTesting(true); setTestResults(null); setRepairMsg(""); const r = await deepTestConnections(); setTestResults(r); setTesting(false); };
   const doRepair  = async () => { setRepairing(true); setRepairMsg("Sending repair request..."); await autoRepairSheets(); setRepairMsg("✅ Sent! Waiting 3s..."); await new Promise(r => setTimeout(r, 3000)); const r = await deepTestConnections(); setTestResults(r); setRepairing(false); const allOk = Object.values(r).every(v => v.ok); setRepairMsg(allOk ? "✅ All fixed!" : "⚠ Some issues remain."); };
   const downloadScript = () => { const txt = getScriptText(); const blob = new Blob([txt], { type: "text/plain;charset=utf-8" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "POS_Script_v7.gs"; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); };
-  const checkDB = async () => { try { const items = await dbGetAll("items"); const sales = await dbGetAll("sales"); const queue = await dbGetAll("pendingQueue"); const lastSync = await dbGetMeta("lastSync"); setDbInfo({ items: items.length, sales: sales.length, queue: queue.length, lastSync }); } catch (e) { setDbInfo({ error: e.message }); } };
-  const clearDB = async () => { if (!window.confirm("Clear all local offline data? (Google Sheets data stays safe)")) return; const stores = ["items","categories","cashiers","sales","customers","returns","stocklog","meta"]; for (const s of stores) await dbClear(s); setDbInfo(null); alert("Local cache cleared. Refresh to reload from Google Sheets."); };
+  const checkDB = async () => {
+    try {
+      const items     = await dbGetAll("items");
+      const sales     = await dbGetAll("sales");
+      const customers = await dbGetAll("customers");
+      const queue     = await dbGetAll("pendingQueue");
+      const lastSync  = await dbGetMeta("lastSync");
+      setDbInfo({ items: items.length, sales: sales.length, customers: customers.length, queue: queue.length, lastSync });
+    } catch (e) { setDbInfo({ error: e.message }); }
+  };
+  const clearDB = async () => {
+    if (!window.confirm("Clear all local offline data? (Database data stays safe)")) return;
+    const stores = ["items","categories","cashiers","sales","customers","returns","stocklog","meta"];
+    for (const s of stores) await dbClear(s);
+    setDbInfo(null);
+    alert("Local cache cleared. Refresh to reload from Database.");
+  };
   const allOk = testResults && Object.values(testResults).every(v => v.ok);
   const SHEET_LABELS = { items:{label:"📦 Items",tabName:"Items"}, categories:{label:"🏷 Categories",tabName:"Categories"}, cashiers:{label:"👤 Cashier",tabName:"Cashier"}, sales:{label:"💰 Sales",tabName:"Sales"}, stocklog:{label:"📉 StockLog",tabName:"StockLog"}, customers:{label:"🧑 Customer",tabName:"Customer"}, returns:{label:"↩ Returns",tabName:"Returns"}, script:{label:"⚡ Apps Script",tabName:null} };
   return (
@@ -141,8 +156,8 @@ export function SetupTab({ sheetStatus, onRefresh, lastSync, safeCallScript }) {
           </div>
         </div>
         {dbInfo && (dbInfo.error ? <div style={{ color: "#ff6b6b", fontSize: 12 }}>Error: {dbInfo.error}</div> :
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 9 }}>
-            {[["Items",dbInfo.items],["Sales",dbInfo.sales],["Pending Queue",dbInfo.queue],["Last Sync",dbInfo.lastSync ? new Date(dbInfo.lastSync).toLocaleTimeString("en-PK") : "Never"]].map(([l,v]) => (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 9 }}>
+            {[["Items",dbInfo.items],["Sales",dbInfo.sales],["Customers",dbInfo.customers],["Pending Queue",dbInfo.queue],["Last Sync",dbInfo.lastSync ? new Date(dbInfo.lastSync).toLocaleTimeString("en-PK") : "Never"]].map(([l,v]) => (
               <div key={l} style={{ background: "rgba(255,255,255,0.025)", borderRadius: 8, padding: "9px 12px" }}><div style={{ color: "rgba(0,180,255,0.7)", fontSize: 10 }}>{l}</div><div style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>{v}</div></div>
             ))}
           </div>
