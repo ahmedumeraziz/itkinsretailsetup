@@ -165,17 +165,20 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
     const customerInfo  = { Name: ab.customerName?.trim() || "Unknown", CellNo: ab.customerCell?.trim() || "" };
     const isKnownCustomer = customerInfo.Name && customerInfo.Name !== "Unknown" && customerInfo.Name.trim() !== "" && customerInfo.CellNo && customerInfo.CellNo.trim() !== "";
     const payMethod = isKnownCustomer ? "Credit" : "Cash";
-    // Compute previous pending for credit customer receipt
+    // Compute previous pending for credit customer receipt (includes openingDebit)
     const existingCustomer = isKnownCustomer ? customers.find(c => c.CellNo === customerInfo.CellNo) : null;
     const prevPending = existingCustomer ? (() => {
+      const normB = (b) => String(b || "").trim().replace(/^0+/, "") || "0";
       const billNos = (existingCustomer.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
       const totalCredit = billNos.reduce((s, bn) => {
-        const sale = sales.find(sale => sale.BillNo === bn || sale.BillNo === bn.padStart(4,"0"));
+        const norm = normB(bn);
+        const sale = sales.find(sale => normB(sale.BillNo) === norm);
         if (!sale || sale.PaymentMethod !== "Credit") return s;
         return s + parseFloat(sale.GrandTotal || 0);
       }, 0);
-      const totalPaid = (existingCustomer.payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0);
-      return Math.max(0, totalCredit - totalPaid);
+      const openingDebit = parseFloat(existingCustomer.openingDebit || 0);
+      const totalPaid    = (existingCustomer.payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0);
+      return Math.max(0, totalCredit + openingDebit - totalPaid);
     })() : 0;
     const bill = { billNo, date, time, cashier: user.Name, items: cart, subTotal, totalDiscount, itemDiscount, billDiscount, billDiscountPct: billDiscPct, grandTotal: netTotal, payments, change: Math.max(0, parseFloat(ab.cashReceived || 0) - netTotal), customerName: customerInfo.Name, customerCell: customerInfo.CellNo, refundApplied, prevPending };
 
