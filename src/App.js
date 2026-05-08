@@ -348,7 +348,15 @@ export default function App() {
     // Sync to Google Sheets
     await safeCallScript({ action: "saveSale", ...saleData });
     if (customerInfo?.Name && customerInfo.Name !== "Unknown" && customerInfo.CellNo) {
-      await safeCallScript({ action: "saveCustomer", Name: customerInfo.Name, CellNo: customerInfo.CellNo, BillNo: saleData.BillNo });
+      // Find existing customer to preserve openingDebit
+      const existingCust = customers.find(c => c.CellNo === customerInfo.CellNo);
+      await safeCallScript({
+        action: "saveCustomer",
+        Name: customerInfo.Name,
+        CellNo: customerInfo.CellNo,
+        BillNo: saleData.BillNo,
+        OpeningDebit: existingCust?.openingDebit ?? 0,
+      });
     }
   }, [safeCallScript]);
 
