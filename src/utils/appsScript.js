@@ -23,7 +23,7 @@ var HEADERS = {
   Cashier:    ["Name","Username","PIN","Role"],
   Sales:      ["BillNo","Date","Time","Cashier","GrandTotal","Discount","FBR","PaymentMethod","ItemsDetail","CustomerName","CustomerCell"],
   StockLog:   ["Date","Barcode","ItemName","StockBefore","StockAfter","Reason"],
-  Customer:   ["Name","CellNo","BillNo","Payments"],
+  Customer:   ["Name","CellNo","BillNo","Payments","OpeningDebit"],
   Returns:    ["ReturnNo","OrigBillNo","Date","Time","Cashier","Items","RefundAmount","Reason","UsedInBill"]
 };
 
@@ -49,6 +49,7 @@ function doPost(e) {
       case "saveCustomer":     result = saveCustomer(ss, data);     break;
       case "deleteCustomer":   result = deleteCustomer(ss, data);   break;
       case "savePayment":      result = savePayment(ss, data);      break;
+      case "syncPayments":     result = syncPayments(ss, data);     break;
       case "adjustStock":      result = adjustStock(ss, data);      break;
       case "addItem":          result = addItem(ss, data);          break;
       case "editItem":         result = editItem(ss, data);         break;
@@ -150,15 +151,21 @@ function saveSale(ss, data) {
       if (custCellIdx !== undefined) {
         var custRowNum = findRow(custSh, custCellIdx, custCell);
         if (custRowNum === -1) {
-          custSh.appendRow([custName, custCell, data.BillNo || "", ""]);
+          custSh.appendRow([custName, custCell, data.BillNo || "", "", 0]);
         } else {
           var billsIdx = custHdrMap["BillNo"];
           if (billsIdx !== undefined) {
             var existingBills = String(custSh.getRange(custRowNum, billsIdx + 1).getValue() || "");
             var billsArr = existingBills.split(",").map(function(b) { return b.trim(); }).filter(Boolean);
-            if (data.BillNo && !billsArr.map(normBill).includes(normBill(data.BillNo))) {
-              billsArr.push(String(data.BillNo));
-              custSh.getRange(custRowNum, billsIdx + 1).setValue(billsArr.join(","));
+            // Deduplicate check
+            var normNew = normBill(data.BillNo || "");
+            var alreadyHas = billsArr.some(function(b) { return normBill(b) === normNew; });
+            if (!alreadyHas && data.BillNo) {
+              // Deduplicate existing before adding
+              var seen = {};
+              var unique = billsArr.filter(function(b) { var n = normBill(b); if (seen[n]) return false; seen[n] = true; return true; });
+              unique.push(String(data.BillNo));
+              custSh.getRange(custRowNum, billsIdx + 1).setValue(unique.join(","));
             }
           }
         }
@@ -266,26 +273,53 @@ function saveCustomer(ss, data) {
   var name    = (data.Name   || "").trim();
   var cell    = (data.CellNo || "").trim();
   var billNo  = (data.BillNo || "").trim();
+  var opening = parseFloat(data.OpeningDebit) || 0;
   if (!name || !cell) return { status: "error", message: "Name and CellNo required" };
   var hdrMap  = getHeaders(sh);
   var cellIdx = hdrMap["CellNo"];
   if (cellIdx === undefined) return { status: "error", message: "CellNo column not found" };
   var rowNum  = findRow(sh, cellIdx, cell);
   if (rowNum === -1) {
-    sh.appendRow([name, cell, billNo, ""]);
+    sh.appendRow([name, cell, billNo, "", opening]);
     return { status: "ok", message: "Customer created: " + name };
   }
   // Update name
   var nameIdx = hdrMap["Name"];
   if (nameIdx !== undefined) sh.getRange(rowNum, nameIdx + 1).setValue(name);
-  // Append bill if new
+  // Update opening debit
+  var openIdx = hdrMap["OpeningDebit"];
+  if (openIdx !== undefined) sh.getRange(rowNum, openIdx + 1).setValue(opening);
+  // Append bill if new — deduplicate using normBill logic
   var billsIdx = hdrMap["BillNo"];
   if (billsIdx !== undefined && billNo) {
     var existing = String(sh.getRange(rowNum, billsIdx + 1).getValue() || "");
     var bills    = existing.split(",").map(function(b) { return b.trim(); }).filter(Boolean);
-    if (!bills.map(normBill).includes(normBill(billNo))) {
-      bills.push(billNo);
-      sh.getRange(rowNum, billsIdx + 1).setValue(bills.join(","));
+    // Deduplicate: strip leading zeros for comparison
+    var normNew = normBill(billNo);
+    var alreadyHas = bills.some(function(b) { return normBill(b) === normNew; });
+    if (!alreadyHas) {
+      // Also deduplicate existing bills before saving
+      var seen = {};
+      var uniqueBills = bills.filter(function(b) {
+        var n = normBill(b);
+        if (seen[n]) return false;
+        seen[n] = true;
+        return true;
+      });
+      uniqueBills.push(billNo);
+      sh.getRange(rowNum, billsIdx + 1).setValue(uniqueBills.join(","));
+    } else {
+      // Still deduplicate existing even if this bill already present
+      var seenD = {};
+      var dedupBills = bills.filter(function(b) {
+        var n = normBill(b);
+        if (seenD[n]) return false;
+        seenD[n] = true;
+        return true;
+      });
+      if (dedupBills.length !== bills.length) {
+        sh.getRange(rowNum, billsIdx + 1).setValue(dedupBills.join(","));
+      }
     }
   }
   return { status: "ok", message: "Customer updated: " + name };
@@ -306,7 +340,29 @@ function deleteCustomer(ss, data) {
   return { status: "ok", message: "Customer deleted: " + cell };
 }
 
-// ── SAVE PAYMENT ──────────────────────────────────────────────────────────────
+// ── SYNC PAYMENTS (full replace — used for delete and receive payment) ────────
+function syncPayments(ss, data) {
+  var sh = ss.getSheetByName(SHEET_CUSTOMER);
+  if (!sh) return { status: "error", message: "Sheet not found: " + SHEET_CUSTOMER };
+  var cell = (data.CellNo || "").trim();
+  if (!cell) return { status: "error", message: "CellNo required" };
+  var hdrMap  = getHeaders(sh);
+  var cellIdx = hdrMap["CellNo"];
+  if (cellIdx === undefined) return { status: "error", message: "CellNo column not found" };
+  var rowNum = findRow(sh, cellIdx, cell);
+  if (rowNum === -1) return { status: "error", message: "Customer not found: " + cell };
+  var payIdx = hdrMap["Payments"];
+  if (payIdx === undefined) {
+    var col = sh.getLastColumn() + 1;
+    sh.getRange(1, col).setValue("Payments");
+    payIdx = col - 1;
+  }
+  // Replace entire payments cell with the provided JSON
+  sh.getRange(rowNum, payIdx + 1).setValue(data.payments || "[]");
+  return { status: "ok", message: "Payments synced for: " + cell };
+}
+
+// ── SAVE PAYMENT (append single payment) ─────────────────────────────────────
 function savePayment(ss, data) {
   var sh = ss.getSheetByName(SHEET_CUSTOMER);
   if (!sh) return { status: "error", message: "Sheet not found: " + SHEET_CUSTOMER };
