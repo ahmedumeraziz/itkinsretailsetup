@@ -483,22 +483,27 @@ function CustomerLedgerModal({ customer, customers, setCustomers, sales, safeCal
     .filter(s => s.PaymentMethod === "Credit")
     .map(s => ({ date: s.Date, type: "debit", billNo: s.BillNo, desc: `Bill #${s.BillNo} (Debit)`, debit: parseFloat(s.GrandTotal || 0), credit: 0 }));
 
-  // Use stable IDs for payments to avoid payIndex shift bug
+  // Use stable IDs for payments — payIndex assigned BEFORE sort, stable after
   const creditRows = (liveCustomer.payments || []).map((p, i) => ({
     date: p.date, type: "credit", billNo: null,
     desc: `Payment Received${p.note ? " — " + p.note : ""}`,
     debit: 0, credit: parseFloat(p.amount || 0),
-    payIndex: i,  // original index in payments array
-    payId: `${p.date}_${p.amount}_${i}`, // stable key
+    payIndex: i,  // index in original payments array — used for deletion
+    payId: `credit_${i}_${p.date}_${p.amount}`, // globally unique stable key
   }));
 
   const allRows = [...openingRow, ...debitRows, ...creditRows].sort((a, b) => {
     const parse = d => {
-      if (!d) return -1; // opening balance stays first
+      if (!d) return -1;
       if (d.includes("/")) { const [dd, mm, yy] = d.split("/"); return new Date(`${yy}-${mm}-${dd}`).getTime(); }
       return new Date(d).getTime();
     };
-    return parse(a.date) - parse(b.date);
+    const diff = parse(a.date) - parse(b.date);
+    // Stable sort: if same date, debits before credits
+    if (diff !== 0) return diff;
+    if (a.type === "debit" && b.type === "credit") return -1;
+    if (a.type === "credit" && b.type === "debit") return 1;
+    return a.payIndex - b.payIndex; // among credits, preserve original order
   });
 
   let running = 0;
@@ -508,11 +513,19 @@ function CustomerLedgerModal({ customer, customers, setCustomers, sales, safeCal
   const totalPaid         = creditRows.reduce((s, r) => s + r.credit, 0);
   const pending           = Math.max(0, totalBilledCredit - totalPaid);
 
-  const deletePayment = async (payIndex) => {
+  const deletePayment = async (payIndex, payId) => {
     if (!window.confirm("Delete this payment record?")) return;
+    // Safety: verify the payIndex actually points to a credit row
+    const targetPayment = (liveCustomer.payments || [])[payIndex];
+    if (!targetPayment) {
+      alert("Payment not found. Please close and reopen the ledger.");
+      return;
+    }
     const updatedPayments = (liveCustomer.payments || []).filter((_, pi) => pi !== payIndex);
     // Update state
-    setCustomers(prev => prev.map(c => c.CellNo === liveCustomer.CellNo ? { ...c, payments: updatedPayments } : c));
+    setCustomers(prev => prev.map(c =>
+      c.CellNo === liveCustomer.CellNo ? { ...c, payments: updatedPayments } : c
+    ));
     // Update IndexedDB
     try {
       const dbC = await dbGet("customers", liveCustomer.CellNo);
@@ -524,7 +537,7 @@ function CustomerLedgerModal({ customer, customers, setCustomers, sales, safeCal
       CellNo: liveCustomer.CellNo.trim(),
       payments: JSON.stringify(updatedPayments),
     });
-    onClose();
+    // Do NOT close modal — stay open so user sees the updated ledger
   };
 
   const downloadPDF = () => {
@@ -600,7 +613,7 @@ function CustomerLedgerModal({ customer, customers, setCustomers, sales, safeCal
                   </div>
                   <div>
                     {r.type === "credit" && (
-                      <button className="btn" title="Delete payment" onClick={() => deletePayment(r.payIndex)}
+                      <button className="btn" title="Delete payment" onClick={() => deletePayment(r.payIndex, r.payId)}
                         style={{ width: 22, height: 22, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", fontSize: 11, borderRadius: 4, padding: 0 }}>✕</button>
                     )}
                   </div>
