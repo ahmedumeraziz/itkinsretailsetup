@@ -24,16 +24,17 @@ export function SalesTab({ sales, setSales, customers }) {
     const c = (customers || []).find(cx => cx.CellNo === sale.CustomerCell);
     if (!c) return 0;
     const billNos = (c.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
-    // Sum all Credit bills BEFORE this one (chronologically earlier BillNo)
     const thisNorm = normBill(sale.BillNo);
+    // Sum all Credit bills BEFORE this one (by bill number order)
     const creditBefore = billNos.reduce((sum, bn) => {
       if (normBill(bn) === thisNorm) return sum; // skip this bill itself
       const s = sales.find(s => normBill(s.BillNo) === normBill(bn));
       if (!s || s.PaymentMethod !== "Credit") return sum;
       return sum + parseFloat(s.GrandTotal || 0);
     }, 0);
-    const totalPaid = (c.payments || []).reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
-    return Math.max(0, creditBefore - totalPaid);
+    const openingDebit = parseFloat(c.openingDebit || 0);
+    const totalPaid    = (c.payments || []).reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+    return Math.max(0, creditBefore + openingDebit - totalPaid);
   }
 
   const reprintBill = sale => {
