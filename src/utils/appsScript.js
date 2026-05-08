@@ -94,7 +94,8 @@ function findRow(sheet, colIndex, value) {
 
 // Normalise bill numbers for matching (strip leading zeros)
 function normBill(b) {
-  return String(b || "").trim().replace(/^0+/, "") || "0";
+  var n = String(b || "").trim().replace(/[^0-9]/g, "");
+  return n.replace(/^0+/, "") || "0";
 }
 
 // ── GENERATE ALL SHEETS (create + ensure all headers) ────────────────────────
