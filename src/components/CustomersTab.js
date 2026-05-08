@@ -4,31 +4,49 @@ import { fmt } from "../utils/helpers";
 import { dbPut, dbGet, dbDelete } from "../utils/db";
 
 // ─── SHARED HELPERS ───────────────────────────────────────────────────────────
-// Normalise bill numbers for safe comparison (strip leading zeros)
+// Normalise bill numbers — strip leading zeros for safe comparison
 function normBill(b) { return String(b || "").trim().replace(/^0+/, "") || "0"; }
 
+// Get unique deduplicated bills for a customer (normalised, no dupes)
+function getUniqueBillNos(c) {
+  const seen = new Set();
+  return (c.BillNo || "").split(",").filter(Boolean).map(b => b.trim()).filter(b => {
+    const n = normBill(b);
+    if (seen.has(n)) return false;
+    seen.add(n);
+    return true;
+  });
+}
+
 function getCustomerSalesAll(c, sales) {
-  const billNos = (c.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
-  return billNos.map(bn => {
+  return getUniqueBillNos(c).map(bn => {
     const norm = normBill(bn);
     return sales.find(s => normBill(s.BillNo) === norm);
   }).filter(Boolean);
 }
 
 function getPendingBalance(c, sales) {
-  // Only Credit-method sales are outstanding
-  const custSales  = getCustomerSalesAll(c, sales);
+  const custSales   = getCustomerSalesAll(c, sales);
   const totalCredit = custSales
     .filter(s => s.PaymentMethod === "Credit")
     .reduce((sum, s) => sum + parseFloat(s.GrandTotal || 0), 0);
-  const totalPaid = (c.payments || []).reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
-  return Math.max(0, totalCredit - totalPaid);
+  const openingDebit = parseFloat(c.openingDebit || 0);
+  const totalPaid    = (c.payments || []).reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+  return Math.max(0, totalCredit + openingDebit - totalPaid);
 }
 
 function getTotalBilledAll(c, sales) {
   return getCustomerSalesAll(c, sales)
     .reduce((sum, s) => sum + parseFloat(s.GrandTotal || 0), 0);
 }
+
+// Parse date to sortable number
+function parseDate(d) {
+  if (!d) return 0;
+  if (d.includes("/")) { const [dd, mm, yy] = d.split("/"); return parseInt(`${yy}${mm.padStart(2,"0")}${dd.padStart(2,"0")}`); }
+  return parseInt(d.replace(/-/g,""));
+}
+function inputToNum(d) { return d ? parseInt(d.replace(/-/g,"")) : 0; }
 
 // ─── PRINT PAYMENT RECEIPT ────────────────────────────────────────────────────
 function printPaymentReceipt({ customer, amountReceived, date, note, pendingBefore, remainingAfter }) {
@@ -56,8 +74,7 @@ function printPaymentReceipt({ customer, amountReceived, date, note, pendingBefo
   <br/><br/></body></html>`;
   const w = window.open("", "_blank", "width=340,height=560");
   if (!w) { alert("Allow popups to print!"); return; }
-  w.document.write(html);
-  w.document.close();
+  w.document.write(html); w.document.close();
   setTimeout(() => { w.focus(); w.print(); }, 400);
 }
 
@@ -73,23 +90,14 @@ export function CustomersTab({ customers, setCustomers, safeCallScript, sales, c
   const [showAddCustomer, setShowAddCustomer] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
 
-  // Parse dd/mm/yyyy or yyyy-mm-dd to comparable number
-  function parseDate(d) {
-    if (!d) return 0;
-    if (d.includes("/")) { const [dd,mm,yy] = d.split("/"); return parseInt(`${yy}${mm.padStart(2,"0")}${dd.padStart(2,"0")}`); }
-    return parseInt(d.replace(/-/g,""));
-  }
-  function inputToNum(d) { return d ? parseInt(d.replace(/-/g,"")) : 0; }
-
   const filtered = customers.filter(c => {
     if (filterName && !c.Name?.toLowerCase().includes(filterName.toLowerCase())) return false;
     if (filterCell && !c.CellNo?.includes(filterCell)) return false;
     if (filterBill) {
       const norm  = normBill(filterBill);
-      const bills = (c.BillNo || "").split(",").filter(Boolean).map(b => normBill(b));
+      const bills = getUniqueBillNos(c).map(b => normBill(b));
       if (!bills.includes(norm)) return false;
     }
-    // Date filter: check if any of the customer's bills fall in range
     if (dateFrom || dateTo) {
       const from = inputToNum(dateFrom);
       const to   = inputToNum(dateTo) || 99999999;
@@ -120,7 +128,7 @@ export function CustomersTab({ customers, setCustomers, safeCallScript, sales, c
       const totalBilled = getTotalBilledAll(c, sales);
       const totalPaid   = (c.payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0);
       const pending     = getPendingBalance(c, sales);
-      return `"${(c.Name || "").replace(/"/g, '""')}","${(c.CellNo || "").replace(/"/g, '""')}","${c.BillNo || ""}","${totalBilled}","${totalPaid}","${pending}"`;
+      return `"${(c.Name || "").replace(/"/g, '""')}","${(c.CellNo || "").replace(/"/g, '""')}","${getUniqueBillNos(c).join(",")}","${totalBilled}","${totalPaid}","${pending}"`;
     }).join("\n");
     const blob = new Blob([header + rows], { type: "text/csv;charset=utf-8;" });
     const url  = URL.createObjectURL(blob);
@@ -135,9 +143,9 @@ export function CustomersTab({ customers, setCustomers, safeCallScript, sales, c
       {/* Summary Cards */}
       <div style={{ display: "flex", gap: 11, marginBottom: 16, flexWrap: "wrap" }}>
         {[
-          { label: "Total Customers",     val: customers.length,          color: "#00b4ff" },
-          { label: "Total Pending (Cr)",  val: `PKR ${fmt(totalPending)}`, color: "#ff6b6b" },
-          { label: "Total Received",      val: `PKR ${fmt(totalReceived)}`,color: "#00e5a0" },
+          { label: "Total Customers",    val: customers.length,           color: "#00b4ff" },
+          { label: "Total Pending (Cr)", val: `PKR ${fmt(totalPending)}`, color: "#ff6b6b" },
+          { label: "Total Received",     val: `PKR ${fmt(totalReceived)}`,color: "#00e5a0" },
         ].map((s, i) => (
           <div key={i} style={{ padding: "11px 18px", background: `rgba(${s.color === "#00b4ff" ? "0,180,255" : s.color === "#ff6b6b" ? "255,80,80" : "0,229,160"},0.05)`, border: `1px solid ${s.color}33`, borderRadius: 10 }}>
             <div style={{ color: s.color, fontSize: 22, fontWeight: 800 }}>{s.val}</div>
@@ -148,7 +156,7 @@ export function CustomersTab({ customers, setCustomers, safeCallScript, sales, c
 
       {/* Filters */}
       <div style={{ display: "flex", gap: 9, marginBottom: 13, flexWrap: "wrap", alignItems: "center" }}>
-        <input value={filterName} onChange={e => setFilterName(e.target.value)} placeholder="Filter by Name..."  style={{ ...inSt, maxWidth: 165 }} />
+        <input value={filterName} onChange={e => setFilterName(e.target.value)} placeholder="Filter by Name..."  style={{ ...inSt, maxWidth: 160 }} />
         <input value={filterCell} onChange={e => setFilterCell(e.target.value)} placeholder="Filter by Cell#..." style={{ ...inSt, maxWidth: 145 }} />
         <input value={filterBill} onChange={e => setFilterBill(e.target.value)} placeholder="Filter by Bill#..." style={{ ...inSt, maxWidth: 130 }} />
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -187,6 +195,8 @@ export function CustomersTab({ customers, setCustomers, safeCallScript, sales, c
           ) : filtered.map((c, i) => {
             const totalBilled = getTotalBilledAll(c, sales);
             const pending     = getPendingBalance(c, sales);
+            // Show unique deduplicated bills only
+            const uniqueBills = getUniqueBillNos(c);
             return (
               <div key={i} onClick={() => setLedgerCustomer(c)}
                 style={{ display: "grid", gridTemplateColumns: currentUser?.Role === "admin" ? "1fr 160px 1fr 110px 110px 80px" : "1fr 160px 1fr 110px 110px", padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.035)", alignItems: "center", cursor: "pointer" }}
@@ -200,9 +210,10 @@ export function CustomersTab({ customers, setCustomers, safeCallScript, sales, c
                 </div>
                 <div style={{ color: "rgba(0,180,255,0.8)", fontSize: 12, fontFamily: "monospace" }}>{c.CellNo || "—"}</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                  {(c.BillNo || "").split(",").filter(Boolean).map(b => (
-                    <span key={b} style={{ padding: "2px 8px", borderRadius: 12, background: "rgba(0,180,255,0.1)", border: "1px solid rgba(0,180,255,0.2)", color: "#00b4ff", fontSize: 10, fontWeight: 700 }}>#{b.trim()}</span>
+                  {uniqueBills.slice(0, 6).map(b => (
+                    <span key={b} style={{ padding: "2px 7px", borderRadius: 12, background: "rgba(0,180,255,0.1)", border: "1px solid rgba(0,180,255,0.2)", color: "#00b4ff", fontSize: 10, fontWeight: 700 }}>#{b}</span>
                   ))}
+                  {uniqueBills.length > 6 && <span style={{ color: "rgba(255,255,255,0.3)", fontSize: 10 }}>+{uniqueBills.length - 6}</span>}
                 </div>
                 <div style={{ textAlign: "right", color: "#00e5a0", fontSize: 12, fontWeight: 700 }}>PKR {fmt(totalBilled)}</div>
                 <div style={{ textAlign: "right", color: pending > 0 ? "#ff6b6b" : "#00e5a0", fontSize: 12, fontWeight: 700 }}>
@@ -229,6 +240,7 @@ export function CustomersTab({ customers, setCustomers, safeCallScript, sales, c
         <CustomerLedgerModal
           customer={customers.find(c => c.CellNo === ledgerCustomer.CellNo) || ledgerCustomer}
           customers={customers} setCustomers={setCustomers} sales={sales}
+          safeCallScript={safeCallScript}
           onClose={() => setLedgerCustomer(null)}
         />
       )}
@@ -237,29 +249,56 @@ export function CustomersTab({ customers, setCustomers, safeCallScript, sales, c
   );
 }
 
-// ─── ADD CUSTOMER MODAL ───────────────────────────────────────────────────────
+// ─── ADD CUSTOMER MODAL (with Starting Debit) ─────────────────────────────────
 function AddCustomerModal({ customers, setCustomers, safeCallScript, onClose }) {
-  const [name, setName] = useState(""); const [cell, setCell] = useState(""); const [msg, setMsg] = useState("");
+  const [name,         setName]         = useState("");
+  const [cell,         setCell]         = useState("");
+  const [openingDebit, setOpeningDebit] = useState("");
+  const [msg,          setMsg]          = useState("");
+
   const handleSave = async () => {
     if (!name.trim() || !cell.trim()) { setMsg("Name and Cell# are required."); return; }
     if (customers.find(c => c.CellNo === cell.trim())) { setMsg("A customer with this cell# already exists."); return; }
-    const newCust = { Name: name.trim(), CellNo: cell.trim(), BillNo: "", payments: [] };
+    const debit   = parseFloat(openingDebit) || 0;
+    const newCust = { Name: name.trim(), CellNo: cell.trim(), BillNo: "", payments: [], openingDebit: debit };
     setCustomers(p => [...p, newCust]);
     try { await dbPut("customers", { ...newCust, id: cell.trim() }); } catch {}
-    await safeCallScript({ action: "saveCustomer", Name: name.trim(), CellNo: cell.trim(), BillNo: "" });
+    await safeCallScript({ action: "saveCustomer", Name: name.trim(), CellNo: cell.trim(), BillNo: "", OpeningDebit: debit });
     onClose();
   };
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "#0c1828", border: "1px solid rgba(0,180,255,0.3)", borderRadius: 14, padding: 24, width: 380, maxWidth: "95vw" }}>
+      <div style={{ background: "#0c1828", border: "1px solid rgba(0,180,255,0.3)", borderRadius: 14, padding: 24, width: 400, maxWidth: "95vw" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <div style={{ color: "#00b4ff", fontSize: 14, fontWeight: 700 }}>➕ Add New Customer</div>
           <button className="btn" onClick={onClose} style={{ width: 28, height: 28, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", borderRadius: 6, fontSize: 14 }}>✕</button>
         </div>
-        <div style={{ marginBottom: 12 }}><label style={lbSt}>FULL NAME</label><input value={name} onChange={e => setName(e.target.value)} style={inSt} placeholder="Customer name..." autoFocus /></div>
-        <div style={{ marginBottom: 14 }}><label style={lbSt}>CELL NUMBER</label><input value={cell} onChange={e => setCell(e.target.value)} style={inSt} placeholder="e.g. 0300-1234567" onKeyDown={e => e.key === "Enter" && handleSave()} /></div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={lbSt}>FULL NAME</label>
+          <input value={name} onChange={e => setName(e.target.value)} style={inSt} placeholder="Customer name..." autoFocus />
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <label style={lbSt}>CELL NUMBER</label>
+          <input value={cell} onChange={e => setCell(e.target.value)} style={inSt} placeholder="e.g. 0300-1234567" />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={lbSt}>STARTING DEBIT AMOUNT (PKR) — optional</label>
+          <input type="number" value={openingDebit} onChange={e => setOpeningDebit(e.target.value)}
+            style={{ ...inSt, border: "1px solid rgba(255,150,0,0.35)" }}
+            placeholder="0 — enter if customer already owes from before"
+            onKeyDown={e => e.key === "Enter" && handleSave()} />
+          {parseFloat(openingDebit) > 0 && (
+            <div style={{ marginTop: 5, fontSize: 11, color: "#ff9500" }}>
+              ⚠ Customer will start with PKR {fmt(parseFloat(openingDebit))} debit balance
+            </div>
+          )}
+        </div>
         {msg && <div style={{ marginBottom: 12, color: "#ff6b6b", fontSize: 12 }}>{msg}</div>}
-        <button className="btn" onClick={handleSave} style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>💾 Save Customer</button>
+        <button className="btn" onClick={handleSave}
+          style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>
+          💾 Save Customer
+        </button>
       </div>
     </div>
   );
@@ -267,26 +306,37 @@ function AddCustomerModal({ customers, setCustomers, safeCallScript, onClose }) 
 
 // ─── EDIT CUSTOMER MODAL ──────────────────────────────────────────────────────
 function EditCustomerModal({ customer, customers, setCustomers, safeCallScript, onClose }) {
-  const [name, setName] = useState(customer.Name || ""); const [cell, setCell] = useState(customer.CellNo || ""); const [msg, setMsg] = useState("");
+  const [name,         setName]         = useState(customer.Name || "");
+  const [cell,         setCell]         = useState(customer.CellNo || "");
+  const [openingDebit, setOpeningDebit] = useState(customer.openingDebit || "");
+  const [msg,          setMsg]          = useState("");
+
   const handleSave = async () => {
     if (!name.trim() || !cell.trim()) { setMsg("Name and Cell# required."); return; }
-    const updated = { ...customer, Name: name.trim(), CellNo: cell.trim() };
+    const debit   = parseFloat(openingDebit) || 0;
+    const updated = { ...customer, Name: name.trim(), CellNo: cell.trim(), openingDebit: debit };
     setCustomers(p => p.map(c => c.CellNo === customer.CellNo ? updated : c));
     try { await dbPut("customers", { ...updated, id: cell.trim() }); } catch {}
-    await safeCallScript({ action: "saveCustomer", Name: name.trim(), CellNo: cell.trim(), BillNo: customer.BillNo || "" });
+    await safeCallScript({ action: "saveCustomer", Name: name.trim(), CellNo: cell.trim(), BillNo: customer.BillNo || "", OpeningDebit: debit });
     onClose();
   };
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "#0c1828", border: "1px solid rgba(0,180,255,0.3)", borderRadius: 14, padding: 24, width: 380, maxWidth: "95vw" }}>
+      <div style={{ background: "#0c1828", border: "1px solid rgba(0,180,255,0.3)", borderRadius: 14, padding: 24, width: 400, maxWidth: "95vw" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <div style={{ color: "#00b4ff", fontSize: 14, fontWeight: 700 }}>✏️ Edit Customer</div>
           <button className="btn" onClick={onClose} style={{ width: 28, height: 28, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", borderRadius: 6, fontSize: 14 }}>✕</button>
         </div>
         <div style={{ marginBottom: 12 }}><label style={lbSt}>FULL NAME</label><input value={name} onChange={e => setName(e.target.value)} style={inSt} /></div>
-        <div style={{ marginBottom: 14 }}><label style={lbSt}>CELL NUMBER</label><input value={cell} onChange={e => setCell(e.target.value)} style={inSt} /></div>
+        <div style={{ marginBottom: 12 }}><label style={lbSt}>CELL NUMBER</label><input value={cell} onChange={e => setCell(e.target.value)} style={inSt} /></div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={lbSt}>STARTING DEBIT AMOUNT (PKR)</label>
+          <input type="number" value={openingDebit} onChange={e => setOpeningDebit(e.target.value)} style={{ ...inSt, border: "1px solid rgba(255,150,0,0.35)" }} placeholder="0" />
+        </div>
         {msg && <div style={{ marginBottom: 12, color: "#ff6b6b", fontSize: 12 }}>{msg}</div>}
-        <button className="btn" onClick={handleSave} style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>💾 Save</button>
+        <button className="btn" onClick={handleSave}
+          style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>💾 Save</button>
       </div>
     </div>
   );
@@ -320,15 +370,23 @@ function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, o
     saving.current = true;
 
     const payment = { date, amount: received, note: note.trim() || "Cash Received" };
+    // Append to existing payments
+    const updatedPayments = [...(selected.payments || []), payment];
 
     setCustomers(prev => prev.map(c =>
-      c.CellNo === selected.CellNo ? { ...c, payments: [...(c.payments || []), payment] } : c
+      c.CellNo === selected.CellNo ? { ...c, payments: updatedPayments } : c
     ));
     try {
       const dbC = await dbGet("customers", selected.CellNo);
-      if (dbC) await dbPut("customers", { ...dbC, payments: [...(dbC.payments || []), payment] });
+      if (dbC) await dbPut("customers", { ...dbC, payments: updatedPayments });
     } catch {}
-    await safeCallScript({ action: "savePayment", CellNo: selected.CellNo.trim(), date, amount: received, note: payment.note });
+
+    // Sync full updated payments array to sheet (replaces, not just appends)
+    await safeCallScript({
+      action: "syncPayments",
+      CellNo: selected.CellNo.trim(),
+      payments: JSON.stringify(updatedPayments),
+    });
 
     printPaymentReceipt({ customer: selected, amountReceived: received, date, note: payment.note, pendingBefore: pending, remainingAfter: remaining });
 
@@ -398,7 +456,6 @@ function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, o
           <input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Cash received, Bank transfer..." style={{ ...inSt, width: "100%", padding: "8px 12px" }} /></div>
 
         {msg && <div style={{ marginBottom: 12, padding: "8px 12px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.3)", borderRadius: 7, color: "#ff6b6b", fontSize: 12 }}>{msg}</div>}
-
         <button className="btn" onClick={handleSave}
           style={{ width: "100%", padding: 13, background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>
           🖨 Save & Print Receipt
@@ -409,29 +466,35 @@ function ReceivePaymentModal({ customers, setCustomers, sales, safeCallScript, o
 }
 
 // ─── CUSTOMER LEDGER MODAL ────────────────────────────────────────────────────
-function CustomerLedgerModal({ customer, customers, setCustomers, sales, onClose }) {
-  // Deduplicate bill numbers before building rows
-  const uniqueBillNos = [...new Set(
-    (customer.BillNo || "").split(",").filter(Boolean).map(b => b.trim())
-  )];
-  const custSales = uniqueBillNos.map(bn => {
-    const norm = normBill(bn);
-    return sales.find(s => normBill(s.BillNo) === norm);
-  }).filter(Boolean);
+function CustomerLedgerModal({ customer, customers, setCustomers, sales, safeCallScript, onClose }) {
+  // Always re-read from live customers for freshness
+  const liveCustomer = customers.find(c => c.CellNo === customer.CellNo) || customer;
+
+  // Deduplicate bill numbers using normBill
+  const custSales = getCustomerSalesAll(liveCustomer, sales);
+  const openingDebit = parseFloat(liveCustomer.openingDebit || 0);
+
+  // Opening balance row (if any)
+  const openingRow = openingDebit > 0
+    ? [{ date: "", type: "debit", billNo: null, desc: "Opening Balance (Starting Debit)", debit: openingDebit, credit: 0 }]
+    : [];
 
   const debitRows = custSales
     .filter(s => s.PaymentMethod === "Credit")
     .map(s => ({ date: s.Date, type: "debit", billNo: s.BillNo, desc: `Bill #${s.BillNo} (Debit)`, debit: parseFloat(s.GrandTotal || 0), credit: 0 }));
 
-  const creditRows = (customer.payments || []).map((p, i) => ({
+  // Use stable IDs for payments to avoid payIndex shift bug
+  const creditRows = (liveCustomer.payments || []).map((p, i) => ({
     date: p.date, type: "credit", billNo: null,
     desc: `Payment Received${p.note ? " — " + p.note : ""}`,
-    debit: 0, credit: parseFloat(p.amount || 0), payIndex: i,
+    debit: 0, credit: parseFloat(p.amount || 0),
+    payIndex: i,  // original index in payments array
+    payId: `${p.date}_${p.amount}_${i}`, // stable key
   }));
 
-  const allRows = [...debitRows, ...creditRows].sort((a, b) => {
+  const allRows = [...openingRow, ...debitRows, ...creditRows].sort((a, b) => {
     const parse = d => {
-      if (!d) return 0;
+      if (!d) return -1; // opening balance stays first
       if (d.includes("/")) { const [dd, mm, yy] = d.split("/"); return new Date(`${yy}-${mm}-${dd}`).getTime(); }
       return new Date(d).getTime();
     };
@@ -441,15 +504,26 @@ function CustomerLedgerModal({ customer, customers, setCustomers, sales, onClose
   let running = 0;
   const rows = allRows.map(r => { running = running + r.debit - r.credit; return { ...r, balance: running }; });
 
-  const totalBilledCredit = debitRows.reduce((s, r) => s + r.debit, 0);
+  const totalBilledCredit = debitRows.reduce((s, r) => s + r.debit, 0) + openingDebit;
   const totalPaid         = creditRows.reduce((s, r) => s + r.credit, 0);
   const pending           = Math.max(0, totalBilledCredit - totalPaid);
 
   const deletePayment = async (payIndex) => {
     if (!window.confirm("Delete this payment record?")) return;
-    const updatedPayments = (customer.payments || []).filter((_, pi) => pi !== payIndex);
-    setCustomers(prev => prev.map(c => c.CellNo === customer.CellNo ? { ...c, payments: updatedPayments } : c));
-    try { const dbC = await dbGet("customers", customer.CellNo); if (dbC) await dbPut("customers", { ...dbC, payments: updatedPayments }); } catch {}
+    const updatedPayments = (liveCustomer.payments || []).filter((_, pi) => pi !== payIndex);
+    // Update state
+    setCustomers(prev => prev.map(c => c.CellNo === liveCustomer.CellNo ? { ...c, payments: updatedPayments } : c));
+    // Update IndexedDB
+    try {
+      const dbC = await dbGet("customers", liveCustomer.CellNo);
+      if (dbC) await dbPut("customers", { ...dbC, payments: updatedPayments });
+    } catch {}
+    // Sync full payments array to sheet — this REPLACES the Payments cell
+    await safeCallScript({
+      action: "syncPayments",
+      CellNo: liveCustomer.CellNo.trim(),
+      payments: JSON.stringify(updatedPayments),
+    });
     onClose();
   };
 
@@ -460,7 +534,7 @@ function CustomerLedgerModal({ customer, customers, setCustomers, sales, onClose
     });
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;color:#000;background:#fff;padding:30px}h1{font-size:20px;text-align:center;margin-bottom:4px}.sub{text-align:center;color:#555;font-size:12px;margin-bottom:20px}.info-box{display:flex;gap:20px;margin-bottom:20px;padding:12px 16px;border:1px solid #ddd;border-radius:6px;background:#f9f9f9;flex-wrap:wrap}.info-item{display:flex;flex-direction:column;gap:2px}.info-label{color:#777;font-size:10px;text-transform:uppercase;letter-spacing:1px}.info-val{font-weight:bold;font-size:14px}table{width:100%;border-collapse:collapse;margin-bottom:20px}th{background:#0c1828;color:#fff;padding:8px 10px;text-align:left;font-size:11px;letter-spacing:1px}td{padding:7px 10px;border-bottom:1px solid #eee;font-size:12px}tr:nth-child(even){background:#f7f7f7}.footer{text-align:center;color:#aaa;font-size:10px;margin-top:10px}@media print{body{padding:10px}}</style></head><body>
     <h1>MART — BAKERY & STORES</h1><div class="sub">Customer Account Statement</div>
-    <div class="info-box"><div class="info-item"><span class="info-label">Customer</span><span class="info-val">${customer.Name}</span></div><div class="info-item"><span class="info-label">Cell#</span><span class="info-val">${customer.CellNo || "—"}</span></div><div class="info-item"><span class="info-label">Credit Billed</span><span class="info-val" style="color:#c00">PKR ${totalBilledCredit.toLocaleString()}</span></div><div class="info-item"><span class="info-label">Total Paid</span><span class="info-val" style="color:#007700">PKR ${totalPaid.toLocaleString()}</span></div><div class="info-item"><span class="info-label">Balance Due</span><span class="info-val" style="color:${pending > 0 ? "#c00" : "#007700"}">${pending > 0 ? `PKR ${pending.toLocaleString()}` : "CLEAR ✓"}</span></div></div>
+    <div class="info-box"><div class="info-item"><span class="info-label">Customer</span><span class="info-val">${liveCustomer.Name}</span></div><div class="info-item"><span class="info-label">Cell#</span><span class="info-val">${liveCustomer.CellNo || "—"}</span></div><div class="info-item"><span class="info-label">Total Debit</span><span class="info-val" style="color:#c00">PKR ${totalBilledCredit.toLocaleString()}</span></div><div class="info-item"><span class="info-label">Total Paid</span><span class="info-val" style="color:#007700">PKR ${totalPaid.toLocaleString()}</span></div><div class="info-item"><span class="info-label">Balance Due</span><span class="info-val" style="color:${pending > 0 ? "#c00" : "#007700"}">${pending > 0 ? `PKR ${pending.toLocaleString()}` : "CLEAR ✓"}</span></div></div>
     <table><thead><tr><th>Date</th><th>Description</th><th style="text-align:right">Debit (Dr)</th><th style="text-align:right">Credit (Cr)</th><th style="text-align:right">Balance</th></tr></thead><tbody>${tableRows}</tbody></table>
     <div class="footer">Generated by itKINS POS System · itkins.com · 0304-7414437</div><br/></body></html>`;
     const w = window.open("", "_blank", "width=900,height=700");
@@ -471,25 +545,31 @@ function CustomerLedgerModal({ customer, customers, setCustomers, sales, onClose
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "#0a0e1a", border: "1px solid rgba(0,180,255,0.3)", borderRadius: 14, padding: 24, width: 740, maxWidth: "96vw", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+      <div style={{ background: "#0a0e1a", border: "1px solid rgba(0,180,255,0.3)", borderRadius: 14, padding: 24, width: 760, maxWidth: "96vw", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
           <div>
-            <div style={{ color: "#00b4ff", fontSize: 16, fontWeight: 800 }}>{customer.Name}</div>
-            <div style={{ color: "rgba(0,180,255,0.6)", fontSize: 12, fontFamily: "monospace" }}>{customer.CellNo || "—"}</div>
+            <div style={{ color: "#00b4ff", fontSize: 16, fontWeight: 800 }}>{liveCustomer.Name}</div>
+            <div style={{ color: "rgba(0,180,255,0.6)", fontSize: 12, fontFamily: "monospace" }}>{liveCustomer.CellNo || "—"}</div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn" onClick={downloadPDF} style={{ padding: "7px 14px", background: "linear-gradient(135deg,#b45309,#fbbf24)", color: "#000", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>📄 Print Statement</button>
             <button className="btn" onClick={onClose} style={{ width: 30, height: 30, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.2)", color: "#ff6b6b", borderRadius: 6, fontSize: 14 }}>✕</button>
           </div>
         </div>
+
         <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-          {[{ label: "Credit Billed", val: `PKR ${fmt(totalBilledCredit)}`, color: "#ff6b6b" }, { label: "Total Paid", val: `PKR ${fmt(totalPaid)}`, color: "#00e5a0" }, { label: "Balance Due", val: pending > 0 ? `PKR ${fmt(pending)}` : "✓ CLEAR", color: pending > 0 ? "#ff6b6b" : "#00e5a0" }].map((s, i) => (
+          {[
+            { label: "Total Debit",  val: `PKR ${fmt(totalBilledCredit)}`, color: "#ff6b6b" },
+            { label: "Total Paid",   val: `PKR ${fmt(totalPaid)}`,         color: "#00e5a0" },
+            { label: "Balance Due",  val: pending > 0 ? `PKR ${fmt(pending)}` : "✓ CLEAR", color: pending > 0 ? "#ff6b6b" : "#00e5a0" },
+          ].map((s, i) => (
             <div key={i} style={{ flex: 1, minWidth: 140, padding: "9px 14px", background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 9 }}>
               <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 10 }}>{s.label}</div>
               <div style={{ color: s.color, fontWeight: 800, fontSize: 15 }}>{s.val}</div>
             </div>
           ))}
         </div>
+
         <div style={{ flex: 1, border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 120px 120px 110px 28px", padding: "8px 14px", background: "rgba(0,180,255,0.07)", color: "rgba(0,180,255,0.72)", fontSize: 10, letterSpacing: 2, fontWeight: 700 }}>
             <div>DATE</div><div>DESCRIPTION</div>
@@ -498,16 +578,26 @@ function CustomerLedgerModal({ customer, customers, setCustomers, sales, onClose
             <div style={{ textAlign: "right" }}>BALANCE</div>
             <div />
           </div>
-          <div style={{ overflowY: "auto", flex: 1, maxHeight: 360 }}>
+          <div style={{ overflowY: "auto", flex: 1, maxHeight: 380 }}>
             {rows.length === 0
               ? <div style={{ textAlign: "center", padding: 30, color: "rgba(255,255,255,0.2)" }}>No transactions found</div>
               : rows.map((r, i) => (
-                <div key={i} style={{ display: "grid", gridTemplateColumns: "100px 1fr 120px 120px 110px 28px", padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.035)", alignItems: "center", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
+                <div key={r.payId || i}
+                  style={{ display: "grid", gridTemplateColumns: "100px 1fr 120px 120px 110px 28px", padding: "9px 14px", borderBottom: "1px solid rgba(255,255,255,0.035)", alignItems: "center", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)" }}>
                   <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 11 }}>{r.date || "—"}</div>
-                  <div style={{ color: "#fff", fontSize: 12 }}>{r.desc}{r.billNo && <span style={{ color: "#00b4ff", marginLeft: 5, fontSize: 10 }}>#{r.billNo}</span>}</div>
-                  <div style={{ textAlign: "right", color: r.debit > 0 ? "#ff6b6b" : "rgba(255,255,255,0.2)", fontSize: 12, fontWeight: r.debit > 0 ? 700 : 400 }}>{r.debit > 0 ? `PKR ${fmt(r.debit)}` : "—"}</div>
-                  <div style={{ textAlign: "right", color: r.credit > 0 ? "#00e5a0" : "rgba(255,255,255,0.2)", fontSize: 12, fontWeight: r.credit > 0 ? 700 : 400 }}>{r.credit > 0 ? `PKR ${fmt(r.credit)}` : "—"}</div>
-                  <div style={{ textAlign: "right", color: r.balance > 0 ? "#ff6b6b" : "#00e5a0", fontSize: 13, fontWeight: 800 }}>{r.balance > 0 ? `PKR ${fmt(r.balance)}` : "NIL"}</div>
+                  <div style={{ color: "#fff", fontSize: 12 }}>
+                    {r.desc}
+                    {r.billNo && <span style={{ color: "#00b4ff", marginLeft: 5, fontSize: 10 }}>#{r.billNo}</span>}
+                  </div>
+                  <div style={{ textAlign: "right", color: r.debit > 0 ? "#ff6b6b" : "rgba(255,255,255,0.2)", fontSize: 12, fontWeight: r.debit > 0 ? 700 : 400 }}>
+                    {r.debit > 0 ? `PKR ${fmt(r.debit)}` : "—"}
+                  </div>
+                  <div style={{ textAlign: "right", color: r.credit > 0 ? "#00e5a0" : "rgba(255,255,255,0.2)", fontSize: 12, fontWeight: r.credit > 0 ? 700 : 400 }}>
+                    {r.credit > 0 ? `PKR ${fmt(r.credit)}` : "—"}
+                  </div>
+                  <div style={{ textAlign: "right", color: r.balance > 0 ? "#ff6b6b" : "#00e5a0", fontSize: 13, fontWeight: 800 }}>
+                    {r.balance > 0 ? `PKR ${fmt(r.balance)}` : "NIL"}
+                  </div>
                   <div>
                     {r.type === "credit" && (
                       <button className="btn" title="Delete payment" onClick={() => deletePayment(r.payIndex)}
@@ -515,7 +605,8 @@ function CustomerLedgerModal({ customer, customers, setCustomers, sales, onClose
                     )}
                   </div>
                 </div>
-              ))}
+              ))
+            }
           </div>
         </div>
       </div>
