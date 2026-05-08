@@ -179,21 +179,36 @@ export default function App() {
       }
       // Customers
       if (rawCustomers.length) {
-        // Get current local customers to preserve any payment deletions done locally
+        // Get current local customers to preserve local-only fields
         let localCustomers = [];
         try { localCustomers = await dbGetAll("customers"); } catch {}
         const localMap = new Map(localCustomers.map(c => [c.CellNo, c]));
 
         const parsed = rawCustomers.map(c => {
-          const sheetPayments = (() => { try { return JSON.parse(c.Payments || "[]"); } catch { return []; } })();
           const localC = localMap.get(c.CellNo);
-          // If local has fewer payments than sheet, respect local (user deleted some)
-          // If local has more, keep local (user added payments offline)
-          const localPay = localC?.payments;
-          const payments = (localPay !== undefined && localPay !== null)
-            ? localPay  // always trust local payments (deletions and additions)
+
+          // Payments: always trust local (preserves deletions & offline additions)
+          const sheetPayments = (() => { try { return JSON.parse(c.Payments || "[]"); } catch { return []; } })();
+          const payments = (localC?.payments !== undefined && localC?.payments !== null)
+            ? localC.payments
             : sheetPayments;
-          return { ...c, payments };
+
+          // Opening debit: preserve from local if set
+          const openingDebit = localC?.openingDebit !== undefined
+            ? localC.openingDebit
+            : parseFloat(c.OpeningDebit || 0);
+
+          // Deduplicate BillNo field from sheet
+          const normBill = (b) => String(b || "").trim().replace(/^0+/, "") || "0";
+          const seen = new Set();
+          const uniqueBills = (c.BillNo || "").split(",").filter(Boolean).map(b => b.trim()).filter(b => {
+            const n = normBill(b);
+            if (seen.has(n)) return false;
+            seen.add(n);
+            return true;
+          });
+
+          return { ...c, BillNo: uniqueBills.join(","), payments, openingDebit };
         });
         setCustomers(parsed);
         await dbSaveAll("customers", parsed, "CellNo");
@@ -312,15 +327,16 @@ export default function App() {
     // Save customer if credit sale
     if (customerInfo?.Name && customerInfo.Name !== "Unknown" && customerInfo.CellNo) {
       setCustomers(prev => {
+        const normB = (b) => String(b || "").trim().replace(/^0+/, "") || "0";
         const existing = prev.find(c => c.CellNo === customerInfo.CellNo);
         if (existing) {
-          const bills = (existing.BillNo || "").split(",").filter(Boolean);
-          if (!bills.includes(saleData.BillNo)) {
-            const updated = { ...existing, BillNo: [...bills, saleData.BillNo].join(",") };
-            dbPut("customers", { ...updated, id: existing.CellNo }).catch(() => {});
-            return prev.map(c => c.CellNo === existing.CellNo ? updated : c);
-          }
-          return prev;
+          // Deduplicate: compare normalised bills so "0115" and "115" are the same
+          const bills = (existing.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
+          const alreadyHas = bills.some(b => normB(b) === normB(saleData.BillNo));
+          if (alreadyHas) return prev; // bill already recorded, no change
+          const updated = { ...existing, BillNo: [...bills, saleData.BillNo].join(",") };
+          dbPut("customers", { ...updated, id: existing.CellNo }).catch(() => {});
+          return prev.map(c => c.CellNo === existing.CellNo ? updated : c);
         } else {
           const newCust = { ...customerInfo, BillNo: saleData.BillNo, payments: [] };
           dbPut("customers", { ...newCust, id: customerInfo.CellNo }).catch(() => {});
