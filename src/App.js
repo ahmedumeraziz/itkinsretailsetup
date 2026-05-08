@@ -170,11 +170,17 @@ export default function App() {
       if (rawSales.length) {
         setSales(rawSales);
         await dbSaveAll("sales", rawSales, "BillNo");
-        const maxBill = rawSales.reduce((m, s) => Math.max(m, parseInt(s.BillNo) || 0), 0);
+        // Parse bill number regardless of prefix (B0001 or 0001)
+        const maxBill = rawSales.reduce((m, s) => {
+          const n = parseInt((s.BillNo || "").replace(/\D/g, "")) || 0;
+          return Math.max(m, n);
+        }, 0);
         if (maxBill > 0) {
-          const next = maxBill + 1;
-          setBillCounter(next);
-          await dbSetMeta("billCounter", next);
+          setBillCounter(prev => {
+            const next = Math.max(prev, maxBill + 1);
+            dbSetMeta("billCounter", next).catch(() => {});
+            return next;
+          });
         }
       }
       // Customers
@@ -217,11 +223,16 @@ export default function App() {
       if (rawReturns.length) {
         setReturns(rawReturns);
         await dbSaveAll("returns", rawReturns, "ReturnNo");
-        const maxRet = rawReturns.reduce((m, r) => Math.max(m, parseInt((r.ReturnNo || "").replace(/\D/g, "")) || 0), 0);
+        const maxRet = rawReturns.reduce((m, r) => {
+          const n = parseInt((r.ReturnNo || "").replace(/\D/g, "")) || 0;
+          return Math.max(m, n);
+        }, 0);
         if (maxRet > 0) {
-          const next = maxRet + 1;
-          setReturnCounter(next);
-          await dbSetMeta("returnCounter", next);
+          setReturnCounter(prev => {
+            const next = Math.max(prev, maxRet + 1);
+            dbSetMeta("returnCounter", next).catch(() => {});
+            return next;
+          });
         }
       }
 
@@ -307,8 +318,8 @@ export default function App() {
     setSales(prev => [...prev, saleData]);
     try { await dbPut("sales", { ...saleData, id: saleData.BillNo }); } catch {}
 
-    // Update bill counter
-    const next = (parseInt(saleData.BillNo) || 0) + 1;
+    // Update bill counter — strip any prefix (B0001 → 1) then increment
+    const next = (parseInt((saleData.BillNo || "").replace(/\D/g, "")) || 0) + 1;
     setBillCounter(next);
     try { await dbSetMeta("billCounter", next); } catch {}
 
@@ -327,7 +338,7 @@ export default function App() {
     // Save customer if credit sale
     if (customerInfo?.Name && customerInfo.Name !== "Unknown" && customerInfo.CellNo) {
       setCustomers(prev => {
-        const normB = (b) => String(b || "").trim().replace(/^0+/, "") || "0";
+        const normB = (b) => { const n = String(b || "").trim().replace(/[^0-9]/g, ""); return n.replace(/^0+/, "") || "0"; };
         const existing = prev.find(c => c.CellNo === customerInfo.CellNo);
         if (existing) {
           // Deduplicate: compare normalised bills so "0115" and "115" are the same
