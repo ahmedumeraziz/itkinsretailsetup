@@ -4,7 +4,7 @@ import { fmt, filterDateMatch, safeParseItems } from "../utils/helpers";
 import { printReceipt, printReturnReceipt } from "../utils/print";
 
 // ── SALES TAB ─────────────────────────────────────────────────────────────────
-export function SalesTab({ sales, setSales, customers }) {
+export function SalesTab({ sales, setSales, customers, returns }) {
   const [filterDate,    setFilterDate]    = useState("");
   const [filterCashier, setFilterCashier] = useState("All");
   const [viewBill,      setViewBill]      = useState(null);
@@ -18,7 +18,15 @@ export function SalesTab({ sales, setSales, customers }) {
   const totalDisc = filtered.reduce((s, r) => s + parseFloat(r.Discount  || 0), 0);
 
   // Compute previous pending for a credit sale at the time of reprint
-  function normBill(b) { return String(b || "").trim().replace(/^0+/, "") || "0"; }
+  function normBill(b) { const n = String(b || "").trim().replace(/[^0-9]/g, ""); return n.replace(/^0+/, "") || "0"; }
+
+  // Find refund amount applied to a bill (from Returns where UsedInBill="1")
+  function getRefundForBill(billNo) {
+    const norm = normBill(billNo);
+    return (returns || [])
+      .filter(r => normBill(r.OrigBillNo) === norm && (r.UsedInBill === "1" || r.UsedInBill === true))
+      .reduce((s, r) => s + parseFloat(r.RefundAmount || 0), 0);
+  }
   function getPrevPending(sale) {
     if (sale.PaymentMethod !== "Credit" || !sale.CustomerCell) return 0;
     const c = (customers || []).find(cx => cx.CellNo === sale.CustomerCell);
@@ -45,6 +53,7 @@ export function SalesTab({ sales, setSales, customers }) {
     const grandTotal    = parseFloat(sale.GrandTotal || 0);
     const isCredit      = sale.PaymentMethod === "Credit";
     const prevPending   = isCredit ? getPrevPending(sale) : 0;
+    const refundApplied = getRefundForBill(sale.BillNo);
     printReceipt({
       billNo: sale.BillNo, date: sale.Date, time: sale.Time, cashier: sale.Cashier,
       items, subTotal, totalDiscount, itemDiscount,
@@ -54,7 +63,7 @@ export function SalesTab({ sales, setSales, customers }) {
       change: 0,
       customerName: sale.CustomerName || "",
       customerCell: sale.CustomerCell || "",
-      refundApplied: 0,
+      refundApplied,
       prevPending,
     });
   };
@@ -120,13 +129,19 @@ export function SalesTab({ sales, setSales, customers }) {
               );
             })()}
 
-            {/* Totals — NO FBR line, show prevPending for credit */}
+            {/* Totals — show discount, refund, prev balance */}
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", marginTop: 12, paddingTop: 12 }}>
               {parseFloat(viewBill.Discount) > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", color: "rgba(255,255,255,0.5)", fontSize: 12, marginBottom: 4 }}>
                   <span>Total Discount</span><span>− PKR {fmt(viewBill.Discount)}</span>
                 </div>
               )}
+              {/* Refund applied to this bill */}
+              {(() => { const ref = getRefundForBill(viewBill.BillNo); if (ref <= 0) return null; return (
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#ff9500", fontSize: 12, marginBottom: 4 }}>
+                  <span>↩ Refund Applied</span><span>− PKR {fmt(ref)}</span>
+                </div>
+              ); })()}
               {/* Previous balance for credit bills */}
               {viewBill.PaymentMethod === "Credit" && (() => {
                 const prev = getPrevPending(viewBill);
