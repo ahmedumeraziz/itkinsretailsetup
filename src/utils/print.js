@@ -38,9 +38,12 @@ export function printReceipt(bill) {
     const grandTotalDebit = parseFloat(bill.grandTotal || 0) + prevPending;
     paymentSection = `
       <div class="dv"></div>
-      ${prevPending > 0 ? `<div class="pr"><span>Previous Balance</span><span style="color:#c00">PKR ${fmt(prevPending)}</span></div>` : ""}
-      <div class="pr gr" style="border-top:1px dashed #000;padding-top:5px;margin-top:3px">
-        <span>GRAND TOTAL</span>
+      ${prevPending > 0
+        ? `<div class="pr"><span>Previous Balance</span><span style="color:#c00;font-weight:700">PKR ${fmt(prevPending)}</span></div>`
+        : `<div class="pr" style="color:#555"><span>Previous Balance</span><span>NIL</span></div>`
+      }
+      <div class="pr gr" style="border-top:1px dashed #000;padding-top:5px;margin-top:4px">
+        <span>GRAND TOTAL DEBIT</span>
         <span style="color:#c00">PKR ${fmt(grandTotalDebit)}</span>
       </div>
       <div style="text-align:center;font-size:10px;margin-top:5px;color:#555">Credit Sale — Please pay by due date</div>`;
