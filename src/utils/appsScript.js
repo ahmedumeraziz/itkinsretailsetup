@@ -330,9 +330,19 @@ function saveCustomer(ss, data) {
   // Update name
   var nameIdx = hdrMap["Name"];
   if (nameIdx !== undefined) sh.getRange(rowNum, nameIdx + 1).setValue(name);
-  // Update opening debit
+  // Update opening debit — only write if provided AND either: cell is empty, or new value > 0
   var openIdx = hdrMap["OpeningDebit"];
-  if (openIdx !== undefined) sh.getRange(rowNum, openIdx + 1).setValue(opening);
+  if (openIdx !== undefined) {
+    var existingDebit = sh.getRange(rowNum, openIdx + 1).getValue();
+    var existingDebitVal = parseFloat(existingDebit) || 0;
+    // Only overwrite if: new value is explicitly > 0, OR cell is currently empty/zero
+    if (opening > 0) {
+      sh.getRange(rowNum, openIdx + 1).setValue(opening);
+    } else if (existingDebitVal === 0 && opening === 0) {
+      // Both zero — no-op, leave as is
+    }
+    // If existing > 0 and new value = 0 → do NOT overwrite (preserve existing)
+  }
   // Append bill if new — deduplicate using normBill logic
   var billsIdx = hdrMap["BillNo"];
   if (billsIdx !== undefined && billNo) {
