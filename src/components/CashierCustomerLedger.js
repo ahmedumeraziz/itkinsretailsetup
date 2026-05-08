@@ -14,8 +14,9 @@ function computePending(c, sales) {
     if (!sale || sale.PaymentMethod !== "Credit") return sum;
     return sum + parseFloat(sale.GrandTotal || 0);
   }, 0);
-  const totalPaid = (c.payments || []).reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
-  return Math.max(0, totalCredit - totalPaid);
+  const openingDebit = parseFloat(c.openingDebit || 0);
+  const totalPaid    = (c.payments || []).reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+  return Math.max(0, totalCredit + openingDebit - totalPaid);
 }
 
 export default function CashierCustomerLedger({
