@@ -160,7 +160,7 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
   const saveBill = () => {
     if (cart.length === 0) return;
     const { date, time } = getNow();
-    const billNo       = String(localCounter).padStart(4, "0");
+    const billNo = "B" + String(localCounter).padStart(4, "0");
     const totalDiscount = itemDiscount + billDiscount;
     const customerInfo  = { Name: ab.customerName?.trim() || "Unknown", CellNo: ab.customerCell?.trim() || "" };
     const isKnownCustomer = customerInfo.Name && customerInfo.Name !== "Unknown" && customerInfo.Name.trim() !== "" && customerInfo.CellNo && customerInfo.CellNo.trim() !== "";
@@ -168,7 +168,7 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
     // Compute previous pending for credit customer receipt (includes openingDebit)
     const existingCustomer = isKnownCustomer ? customers.find(c => c.CellNo === customerInfo.CellNo) : null;
     const prevPending = existingCustomer ? (() => {
-      const normB = (b) => String(b || "").trim().replace(/^0+/, "") || "0";
+      const normB = (b) => { const n = String(b || "").trim().replace(/[^0-9]/g, ""); return n.replace(/^0+/, "") || "0"; };
       const billNos = (existingCustomer.BillNo || "").split(",").filter(Boolean).map(b => b.trim());
       const totalCredit = billNos.reduce((s, bn) => {
         const norm = normB(bn);
@@ -212,7 +212,7 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
           <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 11 }}>{tick.date} {tick.time}</div>
-          <div style={bdgSt("#fff")}>BILL# {String(localCounter).padStart(4, "0")}</div>
+          <div style={bdgSt("#fff")}>BILL# B{String(localCounter).padStart(4, "0")}</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
           <StatusBar isOnline={isOnline} sheetStatus={sheetStatus} lastSync={lastSync} onRefresh={onRefresh} />
