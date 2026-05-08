@@ -62,6 +62,7 @@ function doPost(e) {
       case "saveReturn":       result = saveReturn(ss, data);       break;
       case "markReturnUsed":   result = markReturnUsed(ss, data);   break;
       case "ensureHeaders":    result = ensureAllHeaders(ss);        break;
+      case "generateAllSheets": result = generateAllSheets(ss);     break;
       case "ping":             result = { status: "ok", message: "pong" }; break;
       default:                 result = { status: "error", message: "Unknown action: " + data.action };
     }
@@ -94,6 +95,49 @@ function findRow(sheet, colIndex, value) {
 // Normalise bill numbers for matching (strip leading zeros)
 function normBill(b) {
   return String(b || "").trim().replace(/^0+/, "") || "0";
+}
+
+// ── GENERATE ALL SHEETS (create + ensure all headers) ────────────────────────
+function generateAllSheets(ss) {
+  var created = [];
+  var fixed   = [];
+  var sheetMap = {
+    Items: SHEET_ITEMS, Categories: SHEET_CATEGORIES, Cashier: SHEET_CASHIER,
+    Sales: SHEET_SALES, StockLog: SHEET_STOCKLOG, Customer: SHEET_CUSTOMER, Returns: SHEET_RETURNS
+  };
+  Object.keys(sheetMap).forEach(function(key) {
+    var tabName = sheetMap[key];
+    var sh      = ss.getSheetByName(tabName);
+    if (!sh) {
+      sh = ss.insertSheet(tabName);
+      sh.getRange(1, 1, 1, HEADERS[key].length).setValues([HEADERS[key]]);
+      // Style header row
+      sh.getRange(1, 1, 1, HEADERS[key].length)
+        .setBackground("#0a2540")
+        .setFontColor("#ffffff")
+        .setFontWeight("bold");
+      created.push(tabName);
+    } else {
+      // Sheet exists — ensure all required headers
+      var last     = sh.getLastColumn();
+      var existing = last > 0 ? sh.getRange(1, 1, 1, last).getValues()[0].map(function(h) { return String(h).trim(); }) : [];
+      var required = HEADERS[key] || [];
+      var toAdd    = required.filter(function(h) { return !existing.includes(h); });
+      if (toAdd.length > 0) {
+        toAdd.forEach(function(h) {
+          var col = sh.getLastColumn() + 1;
+          sh.getRange(1, col).setValue(h).setBackground("#0a2540").setFontColor("#ffffff").setFontWeight("bold");
+          fixed.push(tabName + "." + h);
+        });
+      }
+    }
+  });
+  return {
+    status: "ok",
+    created: created,
+    fixed: fixed,
+    message: "Created: [" + created.join(", ") + "] Fixed: [" + fixed.join(", ") + "]"
+  };
 }
 
 // ── ENSURE ALL HEADERS ────────────────────────────────────────────────────────
