@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { inSt, slSt, lbSt } from "../config";
+import { inSt, slSt, REQUIRED_HEADERS } from "../config";
 import { fmt, getExpiryStatus, fmtExpiry } from "../utils/helpers";
-import { dbPut, dbGetAll, dbGet, dbClear, dbGetMeta } from "../utils/db";
-import { deepTestConnections, autoRepairSheets } from "../utils/api";
+import { dbPut, dbGetAll, dbClear, dbGetMeta } from "../utils/db";
+import { deepTestConnections, autoRepairSheets, generateAllSheets } from "../utils/api";
 import { getScriptText } from "../utils/appsScript";
 import { downloadStockPDF } from "../utils/print";
 
@@ -119,100 +119,289 @@ export function StockTab({ items, setItems, safeCallScript }) {
   );
 }
 
+
 // ── SETUP TAB ─────────────────────────────────────────────────────────────────
 export function SetupTab({ sheetStatus, onRefresh, lastSync, safeCallScript }) {
-  const [testResults, setTestResults] = useState(null); const [testing, setTesting] = useState(false); const [repairing, setRepairing] = useState(false); const [repairMsg, setRepairMsg] = useState("");
-  const [dbInfo, setDbInfo] = useState(null);
-  const runTest   = async () => { setTesting(true); setTestResults(null); setRepairMsg(""); const r = await deepTestConnections(); setTestResults(r); setTesting(false); };
-  const doRepair  = async () => { setRepairing(true); setRepairMsg("Sending repair request..."); await autoRepairSheets(); setRepairMsg("✅ Sent! Waiting 3s..."); await new Promise(r => setTimeout(r, 3000)); const r = await deepTestConnections(); setTestResults(r); setRepairing(false); const allOk = Object.values(r).every(v => v.ok); setRepairMsg(allOk ? "✅ All fixed!" : "⚠ Some issues remain."); };
-  const downloadScript = () => { const txt = getScriptText(); const blob = new Blob([txt], { type: "text/plain;charset=utf-8" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "POS_Script_v7.gs"; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); };
+  const [testResults,   setTestResults]   = useState(null);
+  const [testing,       setTesting]       = useState(false);
+  const [repairing,     setRepairing]     = useState(false);
+  const [generating,    setGenerating]    = useState(false);
+  const [actionMsg,     setActionMsg]     = useState("");
+  const [actionStatus,  setActionStatus]  = useState("");
+  const [dbInfo,        setDbInfo]        = useState(null);
+  const [expandedSheet, setExpandedSheet] = useState(null);
+
+  const SHEET_META = {
+    items:      { label: "📦 Items",       tabName: "Items",      desc: "Products, barcodes, prices, stock & expiry" },
+    categories: { label: "🏷 Categories",  tabName: "Categories", desc: "Product category names" },
+    cashiers:   { label: "👤 Cashier",     tabName: "Cashier",    desc: "Staff accounts, PINs, roles" },
+    sales:      { label: "💰 Sales",       tabName: "Sales",      desc: "Every bill, items sold, totals, payment method" },
+    stocklog:   { label: "📉 StockLog",    tabName: "StockLog",   desc: "Stock adjustments and sale deductions log" },
+    customers:  { label: "🧑 Customer",    tabName: "Customer",   desc: "Credit customers, payments, opening debit balance" },
+    returns:    { label: "↩ Returns",      tabName: "Returns",    desc: "Return and refund records" },
+    script:     { label: "⚡ Apps Script", tabName: null,         desc: "Google Apps Script webhook — processes all write operations" },
+  };
+
+  const setMsg = (msg, status = "info") => { setActionMsg(msg); setActionStatus(status); };
+
+  const runTest = async () => {
+    setTesting(true); setTestResults(null); setActionMsg(""); setExpandedSheet(null);
+    const r = await deepTestConnections();
+    setTestResults(r);
+    setTesting(false);
+    const allOk = Object.values(r).every(v => v.ok);
+    if (allOk) setMsg("✅ All connections and headers verified successfully!", "ok");
+    else {
+      const broken = Object.entries(r).filter(([, v]) => !v.ok).map(([k]) => SHEET_META[k]?.label || k);
+      setMsg(`⚠ Issues found in: ${broken.join(", ")}`, "error");
+    }
+  };
+
+  const doRepair = async () => {
+    setRepairing(true);
+    setMsg("🔧 Sending repair command to script...", "info");
+    await autoRepairSheets();
+    setMsg("⏳ Waiting 4 seconds for script to process...", "info");
+    await new Promise(r => setTimeout(r, 4000));
+    setMsg("🔄 Re-testing all connections...", "info");
+    const r = await deepTestConnections();
+    setTestResults(r);
+    setRepairing(false);
+    const allOk = Object.values(r).every(v => v.ok);
+    setMsg(allOk ? "✅ All headers repaired and verified!" : "⚠ Some issues remain — try Generate Sheets or re-deploy script v8.", allOk ? "ok" : "error");
+  };
+
+  const doGenerate = async () => {
+    setGenerating(true);
+    setMsg("🏗 Sending generate command — creating missing sheets and all headers...", "info");
+    await generateAllSheets();
+    await new Promise(r => setTimeout(r, 5000));
+    setMsg("🔄 Re-testing after generate...", "info");
+    const r = await deepTestConnections();
+    setTestResults(r);
+    setGenerating(false);
+    const allOk = Object.values(r).every(v => v.ok);
+    setMsg(allOk ? "✅ All sheets generated and verified!" : "⚠ Script may need re-deploy. Download Script v8 and re-deploy.", allOk ? "ok" : "error");
+  };
+
+  const downloadScript = () => {
+    const txt  = getScriptText();
+    const blob = new Blob([txt], { type: "text/plain;charset=utf-8" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href = url; a.download = "POS_Script_v8.gs";
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  };
+
   const checkDB = async () => {
     try {
-      const items     = await dbGetAll("items");
-      const sales     = await dbGetAll("sales");
-      const customers = await dbGetAll("customers");
-      const queue     = await dbGetAll("pendingQueue");
-      const lastSync  = await dbGetMeta("lastSync");
-      setDbInfo({ items: items.length, sales: sales.length, customers: customers.length, queue: queue.length, lastSync });
+      const [items, sales, customers, cats, cashiers, rets, queue] = await Promise.all([
+        dbGetAll("items"), dbGetAll("sales"), dbGetAll("customers"),
+        dbGetAll("categories"), dbGetAll("cashiers"), dbGetAll("returns"),
+        dbGetAll("pendingQueue"),
+      ]);
+      const ls = await dbGetMeta("lastSync");
+      setDbInfo({ items: items.length, sales: sales.length, customers: customers.length, categories: cats.length, cashiers: cashiers.length, returns: rets.length, queue: queue.length, lastSync: ls });
     } catch (e) { setDbInfo({ error: e.message }); }
   };
+
   const clearDB = async () => {
-    if (!window.confirm("Clear all local offline data? (Database data stays safe)")) return;
-    const stores = ["items","categories","cashiers","sales","customers","returns","stocklog","meta"];
-    for (const s of stores) await dbClear(s);
+    if (!window.confirm("Clear all local offline data?\n\n✅ Database data stays safe — this only clears the browser cache.\n\nYou will need internet to reload data.")) return;
+    for (const s of ["items","categories","cashiers","sales","customers","returns","stocklog","meta","pendingQueue"])
+      await dbClear(s).catch(() => {});
     setDbInfo(null);
-    alert("Local cache cleared. Refresh to reload from Database.");
+    alert("✅ Local cache cleared. Please refresh the page to reload from Database.");
   };
+
   const allOk = testResults && Object.values(testResults).every(v => v.ok);
-  const SHEET_LABELS = { items:{label:"📦 Items",tabName:"Items"}, categories:{label:"🏷 Categories",tabName:"Categories"}, cashiers:{label:"👤 Cashier",tabName:"Cashier"}, sales:{label:"💰 Sales",tabName:"Sales"}, stocklog:{label:"📉 StockLog",tabName:"StockLog"}, customers:{label:"🧑 Customer",tabName:"Customer"}, returns:{label:"↩ Returns",tabName:"Returns"}, script:{label:"⚡ Apps Script",tabName:null} };
+  const hasIssues = testResults && !allOk;
+
+  const spinnerStyle = { width: 12, height: 12, border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" };
+
   return (
-    <div style={{ maxWidth: 720 }}>
+    <div style={{ maxWidth: 780 }}>
+
+      {/* OFFLINE DB */}
       <div style={{ background: "rgba(0,180,255,0.04)", border: "1px solid rgba(0,180,255,0.2)", borderRadius: 12, padding: 18, marginBottom: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <div><div style={{ color: "#00b4ff", fontWeight: 700, fontSize: 13 }}>💾 OFFLINE DATABASE (IndexedDB)</div><div style={{ color: "rgba(255,255,255,0.3)", fontSize: 11, marginTop: 3 }}>Local cache for offline & fast load</div></div>
+          <div>
+            <div style={{ color: "#00b4ff", fontWeight: 700, fontSize: 13 }}>💾 OFFLINE DATABASE (IndexedDB)</div>
+            <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 11, marginTop: 3 }}>Local cache for offline &amp; instant load</div>
+          </div>
           <div style={{ display: "flex", gap: 7 }}>
             <button className="btn" onClick={checkDB} style={{ padding: "7px 14px", background: "rgba(0,180,255,0.1)", border: "1px solid rgba(0,180,255,0.25)", color: "#00b4ff", fontSize: 11, borderRadius: 6 }}>Check DB</button>
             <button className="btn" onClick={clearDB} style={{ padding: "7px 14px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.25)", color: "#ff6b6b", fontSize: 11, borderRadius: 6 }}>Clear Cache</button>
           </div>
         </div>
-        {dbInfo && (dbInfo.error ? <div style={{ color: "#ff6b6b", fontSize: 12 }}>Error: {dbInfo.error}</div> :
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 9 }}>
-            {[["Items",dbInfo.items],["Sales",dbInfo.sales],["Customers",dbInfo.customers],["Pending Queue",dbInfo.queue],["Last Sync",dbInfo.lastSync ? new Date(dbInfo.lastSync).toLocaleTimeString("en-PK") : "Never"]].map(([l,v]) => (
-              <div key={l} style={{ background: "rgba(255,255,255,0.025)", borderRadius: 8, padding: "9px 12px" }}><div style={{ color: "rgba(0,180,255,0.7)", fontSize: 10 }}>{l}</div><div style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>{v}</div></div>
-            ))}
-          </div>
+        {dbInfo && (dbInfo.error
+          ? <div style={{ color: "#ff6b6b", fontSize: 12 }}>Error: {dbInfo.error}</div>
+          : <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 9, marginBottom: 10 }}>
+              {[["Items",dbInfo.items,"#00b4ff"],["Sales",dbInfo.sales,"#00e5a0"],["Customers",dbInfo.customers,"#a78bfa"],["Categories",dbInfo.categories,"#ffd700"],["Cashiers",dbInfo.cashiers,"#00b4ff"],["Returns",dbInfo.returns,"#ff9500"],["Pending Queue",dbInfo.queue, dbInfo.queue > 0 ? "#ffd700" : "#00e5a0"],["Last Sync",dbInfo.lastSync ? new Date(dbInfo.lastSync).toLocaleTimeString("en-PK") : "Never","rgba(255,255,255,0.5)"]].map(([l,v,c]) => (
+                <div key={l} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "8px 11px" }}>
+                  <div style={{ color: "rgba(0,180,255,0.6)", fontSize: 9, letterSpacing: 1, marginBottom: 3 }}>{l.toUpperCase()}</div>
+                  <div style={{ color: c || "#fff", fontWeight: 700, fontSize: 14 }}>{v}</div>
+                </div>
+              ))}
+            </div>
         )}
-        {!dbInfo && <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 12 }}>Click "Check DB" to see local cache status.</div>}
-        <div style={{ marginTop: 10, color: "rgba(255,255,255,0.3)", fontSize: 11, lineHeight: 1.7 }}>Data loads from local cache instantly on startup. Database syncs in background. Offline sales are queued and sent automatically when internet returns.<br />⚠ IndexedDB is per-browser/PC. Multiple PCs sync via Database.</div>
-      </div>
-      <div style={{ background: "rgba(0,180,255,0.04)", border: "1px solid rgba(0,180,255,0.2)", borderRadius: 12, padding: 20, marginBottom: 18 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-          <div><div style={{ color: "#00b4ff", fontWeight: 700, fontSize: 13 }}>🔌 CONNECTION & HEADERS TEST</div></div>
-          <button className="btn" onClick={runTest} disabled={testing || repairing} style={{ padding: "8px 18px", background: testing ? "rgba(0,180,255,0.1)" : "linear-gradient(135deg,#0062ff,#00b4ff)", border: "none", color: "#fff", fontSize: 12, borderRadius: 7, fontWeight: 700 }}>{testing ? "⏳ Testing..." : "▶ Run Test"}</button>
+        {!dbInfo && <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 12 }}>Click "Check DB" to inspect local cache.</div>}
+        <div style={{ color: "rgba(255,255,255,0.25)", fontSize: 11, lineHeight: 1.7, marginTop: 8 }}>
+          Loads instantly on startup · Syncs in background · Offline sales queued &amp; auto-sent · Per-browser cache — multiple PCs sync via Database
         </div>
+      </div>
+
+      {/* CONNECTION TEST */}
+      <div style={{ background: "rgba(0,180,255,0.04)", border: "1px solid rgba(0,180,255,0.2)", borderRadius: 12, padding: 20, marginBottom: 18 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16, gap: 10, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ color: "#00b4ff", fontWeight: 700, fontSize: 13 }}>🔌 DATABASE CONNECTION &amp; HEADER TEST</div>
+            <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 11, marginTop: 3 }}>Tests every sheet tab · checks reachability, row count &amp; all required headers</div>
+          </div>
+          <button className="btn" onClick={runTest} disabled={testing || repairing || generating}
+            style={{ padding: "10px 22px", background: testing ? "rgba(0,180,255,0.15)" : "linear-gradient(135deg,#0062ff,#00b4ff)", border: "none", color: "#fff", fontSize: 13, borderRadius: 8, fontWeight: 700, display: "flex", alignItems: "center", gap: 7 }}>
+            {testing ? <><span style={spinnerStyle} />Testing all sheets...</> : "▶ Run Full Test"}
+          </button>
+        </div>
+
+        {/* Sheet results */}
         {testResults && (
-          <>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
-              {Object.entries(SHEET_LABELS).map(([key, { label, tabName }]) => {
-                const r = testResults[key] || { ok: false, reachable: false, missingHeaders: [], extraInfo: "" };
-                return (
-                  <div key={key} style={{ padding: "12px 16px", background: "rgba(255,255,255,0.025)", border: `1px solid ${r.ok ? "rgba(0,200,0,0.3)" : r.reachable ? "rgba(255,200,0,0.3)" : "rgba(255,80,80,0.3)"}`, borderRadius: 9 }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <div style={{ fontSize: 22 }}>{r.ok ? "✅" : r.reachable ? "⚠️" : "❌"}</div>
-                        <div><div style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{label}</div><div style={{ color: r.ok ? "#00e080" : r.reachable ? "#ffd700" : "#ff6b6b", fontSize: 11 }}>{r.ok ? r.extraInfo : r.extraInfo || "Not reachable"}</div></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+            {Object.entries(SHEET_META).map(([key, { label, tabName, desc }]) => {
+              const r = testResults[key] || { ok: false, reachable: false, headers: [], missingHeaders: [], extraInfo: "" };
+              const isExp = expandedSheet === key;
+              const borderColor = r.ok ? "rgba(0,220,0,0.4)" : r.reachable ? "rgba(255,200,0,0.4)" : "rgba(255,80,80,0.4)";
+              const bgColor     = r.ok ? "rgba(0,180,0,0.05)" : r.reachable ? "rgba(255,180,0,0.04)" : "rgba(255,50,50,0.05)";
+              return (
+                <div key={key} style={{ background: bgColor, border: `2px solid ${borderColor}`, borderRadius: 10, overflow: "hidden" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 16px", cursor: r.headers?.length > 0 ? "pointer" : "default" }}
+                    onClick={() => r.headers?.length > 0 && setExpandedSheet(isExp ? null : key)}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <span style={{ fontSize: 22 }}>{r.ok ? "✅" : r.reachable ? "⚠️" : "❌"}</span>
+                      <div>
+                        <div style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>{label}</div>
+                        <div style={{ color: "rgba(255,255,255,0.32)", fontSize: 10 }}>{desc}</div>
                       </div>
-                      {tabName && <div style={{ fontSize: 11, color: "rgba(255,255,255,0.28)" }}>Tab: <code style={{ color: "rgba(255,255,255,0.6)", background: "rgba(255,255,255,0.06)", padding: "1px 6px", borderRadius: 4 }}>{tabName}</code></div>}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ color: r.ok ? "#00e080" : r.reachable ? "#ffd700" : "#ff7070", fontSize: 11, fontWeight: 600, maxWidth: 240 }}>{r.extraInfo}</div>
+                        {tabName && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", marginTop: 2 }}>Tab: <code style={{ background: "rgba(255,255,255,0.07)", padding: "1px 5px", borderRadius: 3, color: "rgba(255,255,255,0.55)" }}>{tabName}</code></div>}
+                      </div>
+                      {r.headers?.length > 0 && <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 13, userSelect: "none" }}>{isExp ? "▲" : "▼"}</span>}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-            {!allOk && (
-              <div style={{ display: "flex", gap: 9 }}>
-                <button className="btn" onClick={doRepair} disabled={repairing} style={{ padding: "9px 18px", background: "linear-gradient(135deg,#00a651,#00e5a0)", border: "none", color: "#000", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>{repairing ? "⏳ Repairing..." : "🔧 Auto-Repair"}</button>
-                <button className="btn" onClick={downloadScript} style={{ padding: "9px 18px", background: "rgba(255,200,0,0.1)", border: "1px solid rgba(255,200,0,0.3)", color: "#ffd700", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>📥 Download Script v7</button>
-              </div>
-            )}
-            {repairMsg && <div style={{ marginTop: 12, padding: "10px 14px", borderRadius: 8, background: "rgba(0,180,255,0.07)", border: "1px solid rgba(0,180,255,0.2)", color: "rgba(255,255,255,0.8)", fontSize: 12 }}>{repairMsg}</div>}
-          </>
+
+                  {isExp && (
+                    <div style={{ padding: "0 16px 14px", borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+                      {r.headers?.length > 0 && (
+                        <>
+                          <div style={{ color: "rgba(255,255,255,0.35)", fontSize: 10, letterSpacing: 1.2, margin: "10px 0 7px" }}>HEADERS ON SHEET</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                            {r.headers.map(h => {
+                              const req = (REQUIRED_HEADERS[key] || []).includes(h);
+                              return (
+                                <span key={h} style={{ padding: "3px 10px", borderRadius: 12, fontSize: 11, fontWeight: 600,
+                                  background: req ? "rgba(0,220,0,0.08)" : "rgba(255,200,0,0.08)",
+                                  border: `1px solid ${req ? "rgba(0,220,0,0.3)" : "rgba(255,200,0,0.3)"}`,
+                                  color: req ? "#00e5a0" : "#ffd700" }}>
+                                  {h} {req ? "✓" : "⊕"}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </>
+                      )}
+                      {r.missingHeaders?.length > 0 && (
+                        <div style={{ marginTop: 10 }}>
+                          <div style={{ color: "rgba(255,80,80,0.7)", fontSize: 10, letterSpacing: 1.2, marginBottom: 7 }}>MISSING — WILL BE ADDED BY AUTO-REPAIR</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                            {r.missingHeaders.map(h => (
+                              <span key={h} style={{ padding: "3px 10px", borderRadius: 12, fontSize: 11, fontWeight: 600, background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.35)", color: "#ff8080" }}>
+                                {h} ✗
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {r.extraHeaders?.length > 0 && (
+                        <div style={{ marginTop: 8, color: "rgba(255,200,0,0.55)", fontSize: 10 }}>
+                          ⊕ Extra columns (not required, will not be touched): {r.extraHeaders.join(", ")}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
-        {!testResults && !testing && <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 12 }}>Click ▶ Run Test to check all connections.</div>}
+
+        {/* Status message */}
+        {actionMsg && (
+          <div style={{ marginBottom: 14, padding: "11px 15px", borderRadius: 9,
+            background: actionStatus === "ok" ? "rgba(0,200,0,0.07)" : actionStatus === "error" ? "rgba(255,80,80,0.08)" : "rgba(0,180,255,0.07)",
+            border: `1px solid ${actionStatus === "ok" ? "rgba(0,200,0,0.3)" : actionStatus === "error" ? "rgba(255,80,80,0.25)" : "rgba(0,180,255,0.25)"}`,
+            color: actionStatus === "ok" ? "#00e5a0" : actionStatus === "error" ? "#ff9090" : "rgba(255,255,255,0.8)", fontSize: 12 }}>
+            {actionMsg}
+          </div>
+        )}
+
+        {/* Buttons */}
+        <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
+          {testResults && hasIssues && (
+            <button className="btn" onClick={doRepair} disabled={repairing || testing || generating}
+              style={{ padding: "10px 20px", background: repairing ? "rgba(0,200,0,0.1)" : "linear-gradient(135deg,#00a651,#00e5a0)", border: "none", color: repairing ? "#00e5a0" : "#000", fontSize: 12, fontWeight: 700, borderRadius: 7, display: "flex", alignItems: "center", gap: 6 }}>
+              {repairing ? <><span style={{ ...spinnerStyle, borderColor: "rgba(0,200,0,0.4)", borderTopColor: "#00e5a0" }} />Repairing...</> : "🔧 Auto-Repair Headers"}
+            </button>
+          )}
+          <button className="btn" onClick={doGenerate} disabled={generating || testing || repairing}
+            style={{ padding: "10px 20px", background: generating ? "rgba(160,100,255,0.1)" : "linear-gradient(135deg,#7c3aed,#a78bfa)", border: "none", color: generating ? "#a78bfa" : "#fff", fontSize: 12, fontWeight: 700, borderRadius: 7, display: "flex", alignItems: "center", gap: 6 }}>
+            {generating ? <><span style={{ ...spinnerStyle, borderColor: "rgba(167,139,250,0.4)", borderTopColor: "#a78bfa" }} />Generating...</> : "🏗 Generate / Fix All Sheets"}
+          </button>
+          {testResults && (
+            <button className="btn" onClick={runTest} disabled={testing || repairing || generating}
+              style={{ padding: "10px 16px", background: "rgba(0,180,255,0.1)", border: "1px solid rgba(0,180,255,0.3)", color: "#00b4ff", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>
+              🔄 Re-Test
+            </button>
+          )}
+          <button className="btn" onClick={downloadScript}
+            style={{ padding: "10px 18px", background: "rgba(255,200,0,0.1)", border: "1px solid rgba(255,200,0,0.3)", color: "#ffd700", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>
+            📥 Script v8 (.gs)
+          </button>
+          {!testResults && (
+            <button className="btn" onClick={runTest} disabled={testing}
+              style={{ padding: "10px 20px", background: "rgba(0,180,255,0.1)", border: "1px solid rgba(0,180,255,0.3)", color: "#00b4ff", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>
+              ▶ Run Full Test
+            </button>
+          )}
+        </div>
+
+        {!testResults && !testing && (
+          <div style={{ marginTop: 12, color: "rgba(255,255,255,0.28)", fontSize: 12 }}>
+            ↑ Run test to verify all 7 sheet tabs + script. Click any result row to expand header details.
+          </div>
+        )}
       </div>
-      <div style={{ background: "rgba(255,200,0,0.04)", border: "1px solid rgba(255,200,0,0.2)", borderRadius: 12, padding: 18, marginBottom: 18 }}>
-        <div style={{ color: "#ffd700", fontWeight: 700, fontSize: 12, marginBottom: 10 }}>📥 APPS SCRIPT - Download & Deploy</div>
-        <button className="btn" onClick={downloadScript} style={{ padding: "10px 22px", background: "linear-gradient(135deg,#ffd700,#ff8c00)", color: "#000", fontSize: 13, fontWeight: 700, borderRadius: 8 }}>📥 Download Script v7 (.gs)</button>
-      </div>
-      <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: 18, marginBottom: 18 }}>
-        <div style={{ color: "#ffd700", fontWeight: 700, fontSize: 12, marginBottom: 10 }}>🔄 SYNC STATUS</div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>Sheet: <span style={{ color: sheetStatus === "loaded" ? "#00e080" : sheetStatus === "error" ? "#ff6b6b" : "#ffd700", fontWeight: 700 }}>{sheetStatus === "loaded" ? "✓ LIVE" : sheetStatus === "cached" ? "💾 CACHED" : sheetStatus === "error" ? "✗ ERROR" : "◉ DEMO"}</span></div>
-          {lastSync && <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 12 }}>Last: {lastSync.toLocaleString("en-PK")}</div>}
+
+      {/* SYNC STATUS */}
+      <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 12, padding: 16, marginBottom: 18 }}>
+        <div style={{ color: "#ffd700", fontWeight: 700, fontSize: 12, marginBottom: 10 }}>🔄 LIVE SYNC STATUS</div>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ color: "rgba(255,255,255,0.6)", fontSize: 12 }}>
+            Database:&nbsp;
+            <span style={{ color: sheetStatus === "loaded" ? "#00e080" : sheetStatus === "error" ? "#ff6b6b" : "#ffd700", fontWeight: 700 }}>
+              {sheetStatus === "loaded" ? "✓ LIVE" : sheetStatus === "cached" ? "💾 CACHED" : sheetStatus === "error" ? "✗ ERROR" : "◉ DEMO"}
+            </span>
+          </span>
+          {lastSync && <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 12 }}>Last: {lastSync.toLocaleString("en-PK")}</span>}
           <button className="btn" onClick={onRefresh} style={{ padding: "7px 16px", background: "linear-gradient(135deg,#0062ff,#00b4ff)", color: "#fff", fontSize: 12, borderRadius: 7, fontWeight: 700 }}>🔄 Sync Now</button>
         </div>
       </div>
+
+      {/* LICENSE */}
       <div style={{ background: "rgba(255,200,0,0.04)", border: "1px solid rgba(255,200,0,0.22)", borderRadius: 12, padding: 20 }}>
-        <div style={{ color: "#ffd700", fontWeight: 700, fontSize: 13, marginBottom: 14 }}>📋 SOFTWARE LICENSE & PAYMENT TERMS</div>
+        <div style={{ color: "#ffd700", fontWeight: 700, fontSize: 13, marginBottom: 14 }}>📋 SOFTWARE LICENSE &amp; PAYMENT TERMS</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
           {[["1st Installation Fee","PKR 15,000"],["Annual Fee","PKR 10,000"],["Monthly Fee","PKR 2,000"],["Due Date","5th of Each Month"]].map(([l,v]) => (
             <div key={l} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 8, padding: "10px 14px", border: "1px solid rgba(255,200,0,0.15)" }}>
@@ -230,6 +419,7 @@ export function SetupTab({ sheetStatus, onRefresh, lastSync, safeCallScript }) {
           </div>
         </div>
       </div>
+
     </div>
   );
 }
