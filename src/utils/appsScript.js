@@ -61,8 +61,9 @@ function doPost(e) {
       case "deleteCashier":    result = deleteCashier(ss, data);    break;
       case "saveReturn":       result = saveReturn(ss, data);       break;
       case "markReturnUsed":   result = markReturnUsed(ss, data);   break;
-      case "ensureHeaders":    result = ensureAllHeaders(ss);        break;
-      case "generateAllSheets": result = generateAllSheets(ss);     break;
+      case "ensureHeaders":        result = ensureAllHeaders(ss);              break;
+      case "generateAllSheets":    result = generateAllSheets(ss);             break;
+      case "deduplicateCustomers": result = runDeduplicateCustomers(ss);       break;
       case "ping":             result = { status: "ok", message: "pong" }; break;
       default:                 result = { status: "error", message: "Unknown action: " + data.action };
     }
@@ -247,7 +248,76 @@ function saveSale(ss, data) {
       stockLogSh.getRange(nextRow, 1, logRows.length, 6).setValues(logRows);
     }
   }
+  // Deduplicate Customer sheet after every sale — removes duplicate CellNo rows
+  deduplicateCustomerSheet(ss);
+
   return { status: "ok", message: "Sale saved: Bill #" + data.BillNo };
+}
+
+// ── MANUAL DEDUPLICATE TRIGGER ────────────────────────────────────────────────
+function runDeduplicateCustomers(ss) {
+  deduplicateCustomerSheet(ss);
+  return { status: "ok", message: "Customer sheet deduplicated successfully" };
+}
+
+// ── DEDUPLICATE CUSTOMER SHEET ────────────────────────────────────────────────
+// Removes duplicate rows with same CellNo, merging their BillNos
+function deduplicateCustomerSheet(ss) {
+  var sh = ss.getSheetByName(SHEET_CUSTOMER);
+  if (!sh) return;
+  var last = sh.getLastRow();
+  if (last < 2) return;
+  var hdrMap  = getHeaders(sh);
+  var cellIdx = hdrMap["CellNo"];
+  var nameIdx = hdrMap["Name"];
+  var billIdx = hdrMap["BillNo"];
+  var payIdx  = hdrMap["Payments"];
+  var openIdx = hdrMap["OpeningDebit"];
+  if (cellIdx === undefined) return;
+
+  var data     = sh.getRange(2, 1, last - 1, sh.getLastColumn()).getValues();
+  var seen     = {};   // CellNo → first row index in data array
+  var toDelete = [];   // data row indices to delete (0-based in data array)
+
+  data.forEach(function(row, i) {
+    var cell = String(row[cellIdx] || "").trim();
+    if (!cell) return;
+    if (!seen.hasOwnProperty(cell)) {
+      seen[cell] = i;
+    } else {
+      // Merge this duplicate row's BillNo into the first row
+      var firstIdx = seen[cell];
+      if (billIdx !== undefined) {
+        var existing = String(data[firstIdx][billIdx] || "");
+        var extra    = String(row[billIdx] || "");
+        var allBills = existing.split(",").concat(extra.split(",")).map(function(b) { return b.trim(); }).filter(Boolean);
+        var seenN = {};
+        var merged = allBills.filter(function(b) {
+          var n = b.replace(/[^0-9]/g, "").replace(/^0+/, "") || "0";
+          if (seenN[n]) return false;
+          seenN[n] = true; return true;
+        });
+        data[firstIdx][billIdx] = merged.join(",");
+      }
+      toDelete.push(i);
+    }
+  });
+
+  if (toDelete.length === 0) return;
+
+  // Write back merged first rows, then delete duplicates bottom-up
+  // First update the merged rows
+  if (billIdx !== undefined) {
+    Object.keys(seen).forEach(function(cell) {
+      var i = seen[cell];
+      sh.getRange(i + 2, billIdx + 1).setValue(data[i][billIdx]);
+    });
+  }
+
+  // Delete duplicate rows bottom-up to preserve row indices
+  toDelete.reverse().forEach(function(i) {
+    sh.deleteRow(i + 2);
+  });
 }
 
 // ── SAVE RETURN ───────────────────────────────────────────────────────────────
