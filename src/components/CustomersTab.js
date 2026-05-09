@@ -45,8 +45,18 @@ function getTotalBilledAll(c, sales) {
 
 function parseDate(d) {
   if (!d) return 0;
-  if (d.includes("/")) { const [dd, mm, yy] = d.split("/"); return parseInt(`${yy}${mm.padStart(2,"0")}${dd.padStart(2,"0")}`); }
-  return parseInt(d.replace(/-/g,""));
+  if (d.includes("/")) {
+    // dd/mm/yyyy → yyyymmdd number
+    const parts = d.split("/");
+    if (parts.length === 3) {
+      const dd = parts[0].padStart(2, "0");
+      const mm = parts[1].padStart(2, "0");
+      const yy = parts[2];
+      return parseInt(`${yy}${mm}${dd}`);
+    }
+  }
+  // yyyy-mm-dd → yyyymmdd number
+  return parseInt(d.replace(/-/g, ""));
 }
 function inputToNum(d) { return d ? parseInt(d.replace(/-/g,"")) : 0; }
 
@@ -108,7 +118,13 @@ export function CustomersTab({ customers, setCustomers, safeCallScript, sales, c
       const from = inputToNum(dateFrom);
       const to   = inputToNum(dateTo) || 99999999;
       const custSales = getCustomerSalesAll(c, sales);
-      if (!custSales.some(s => { const d = parseDate(s.Date); return d >= (from || 0) && d <= to; })) return false;
+      // If customer has no sales at all and date filter is active → hide them
+      if (custSales.length === 0) return false;
+      const hasMatch = custSales.some(s => {
+        const d = parseDate(s.Date);
+        return d >= (from || 0) && d <= to;
+      });
+      if (!hasMatch) return false;
     }
     return true;
   });
