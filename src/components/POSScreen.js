@@ -180,7 +180,9 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
       const totalPaid    = (existingCustomer.payments || []).reduce((s, p) => s + parseFloat(p.amount || 0), 0);
       return Math.max(0, totalCredit + openingDebit - totalPaid);
     })() : 0;
-    const bill = { billNo, date, time, cashier: user.Name, items: cart, subTotal, totalDiscount, itemDiscount, billDiscount, billDiscountPct: billDiscPct, grandTotal: netTotal, payments, change: Math.max(0, parseFloat(ab.cashReceived || 0) - netTotal), customerName: customerInfo.Name, customerCell: customerInfo.CellNo, refundApplied, prevPending };
+    const refundPayment    = payments.find(p => p.type === "refund");
+    const refundReturnNo   = refundPayment?.origReturnNo || "";
+    const bill = { billNo, date, time, cashier: user.Name, items: cart, subTotal, totalDiscount, itemDiscount, billDiscount, billDiscountPct: billDiscPct, grandTotal: netTotal, payments, change: Math.max(0, parseFloat(ab.cashReceived || 0) - netTotal), customerName: customerInfo.Name, customerCell: customerInfo.CellNo, refundApplied, refundReturnNo, prevPending };
 
     onSaleSaved({
       BillNo: billNo, Date: date, Time: time, Cashier: user.Name,
