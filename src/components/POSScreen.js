@@ -191,7 +191,9 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
       ItemsDetail: JSON.stringify(cart),
       items: cart,
       CustomerName: isKnownCustomer ? customerInfo.Name : "Unknown",
-      CustomerCell: isKnownCustomer ? customerInfo.CellNo : ""
+      CustomerCell: isKnownCustomer ? customerInfo.CellNo : "",
+      RefundApplied: refundApplied,
+      RefundReturnNo: refundReturnNo,
     }, isKnownCustomer ? customerInfo : { Name: "Unknown", CellNo: "" });
 
     setLocalCounter(c => c + 1);
