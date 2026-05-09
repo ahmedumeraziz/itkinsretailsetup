@@ -20,12 +20,12 @@ export function SalesTab({ sales, setSales, customers, returns }) {
   // Compute previous pending for a credit sale at the time of reprint
   function normBill(b) { const n = String(b || "").trim().replace(/[^0-9]/g, ""); return n.replace(/^0+/, "") || "0"; }
 
-  // Find refund amount applied to a bill (from Returns where UsedInBill="1")
-  function getRefundForBill(billNo) {
-    const norm = normBill(billNo);
-    return (returns || [])
-      .filter(r => normBill(r.OrigBillNo) === norm && (r.UsedInBill === "1" || r.UsedInBill === true))
-      .reduce((s, r) => s + parseFloat(r.RefundAmount || 0), 0);
+  // Read refund directly from sale record (stored at time of sale)
+  function getRefundForBill(sale) {
+    return {
+      amount:   parseFloat(sale.RefundApplied  || 0),
+      returnNo: sale.RefundReturnNo || "",
+    };
   }
   function getPrevPending(sale) {
     if (sale.PaymentMethod !== "Credit" || !sale.CustomerCell) return 0;
@@ -53,13 +53,9 @@ export function SalesTab({ sales, setSales, customers, returns }) {
     const grandTotal    = parseFloat(sale.GrandTotal || 0);
     const isCredit      = sale.PaymentMethod === "Credit";
     const prevPending   = isCredit ? getPrevPending(sale) : 0;
-    const refundApplied = getRefundForBill(sale.BillNo);
-    // Find the return number used in this bill
-    const refundReturn  = (returns || []).find(r =>
-      normBill(r.OrigBillNo) === normBill(sale.BillNo) &&
-      (r.UsedInBill === "1" || r.UsedInBill === true)
-    );
-    const refundReturnNo = refundReturn?.ReturnNo || "";
+    const refundInfo    = getRefundForBill(sale);
+    const refundApplied  = refundInfo.amount;
+    const refundReturnNo = refundInfo.returnNo;
     printReceipt({
       billNo: sale.BillNo, date: sale.Date, time: sale.Time, cashier: sale.Cashier,
       items, subTotal, totalDiscount, itemDiscount,
@@ -143,12 +139,17 @@ export function SalesTab({ sales, setSales, customers, returns }) {
                   <span>Total Discount</span><span>− PKR {fmt(viewBill.Discount)}</span>
                 </div>
               )}
-              {/* Refund applied to this bill */}
-              {(() => { const ref = getRefundForBill(viewBill.BillNo); if (ref <= 0) return null; return (
-                <div style={{ display: "flex", justifyContent: "space-between", color: "#ff9500", fontSize: 12, marginBottom: 4 }}>
-                  <span>↩ Refund Applied</span><span>− PKR {fmt(ref)}</span>
-                </div>
-              ); })()}
+              {/* Refund applied to this bill — read from sale record */}
+              {(() => {
+                const ref = getRefundForBill(viewBill);
+                if (ref.amount <= 0) return null;
+                return (
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#ff9500", fontSize: 12, marginBottom: 4 }}>
+                    <span>↩ Refund Applied {ref.returnNo ? `(${ref.returnNo})` : ""}</span>
+                    <span>− PKR {fmt(ref.amount)}</span>
+                  </div>
+                );
+              })()}
               {/* Previous balance for credit bills */}
               {viewBill.PaymentMethod === "Credit" && (() => {
                 const prev = getPrevPending(viewBill);
