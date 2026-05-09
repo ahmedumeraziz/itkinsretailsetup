@@ -21,7 +21,7 @@ var HEADERS = {
   Items:      ["Barcode","Category","Company","ItemName","Price","CostPrice","Discount","Stock","ExpiryDate"],
   Categories: ["CategoryName"],
   Cashier:    ["Name","Username","PIN","Role"],
-  Sales:      ["BillNo","Date","Time","Cashier","GrandTotal","Discount","FBR","PaymentMethod","ItemsDetail","CustomerName","CustomerCell"],
+  Sales:      ["BillNo","Date","Time","Cashier","GrandTotal","Discount","FBR","PaymentMethod","ItemsDetail","CustomerName","CustomerCell","RefundApplied","RefundReturnNo"],
   StockLog:   ["Date","Barcode","ItemName","StockBefore","StockAfter","Reason"],
   Customer:   ["Name","CellNo","BillNo","Payments","OpeningDebit"],
   Returns:    ["ReturnNo","OrigBillNo","Date","Time","Cashier","Items","RefundAmount","Reason","UsedInBill"]
@@ -183,7 +183,8 @@ function saveSale(ss, data) {
     data.BillNo || "", data.Date || "", data.Time || "", data.Cashier || "",
     parseFloat(data.GrandTotal) || 0, parseFloat(data.Discount) || 0, 0,
     data.PaymentMethod || "", data.ItemsDetail || "[]",
-    data.CustomerName || "Unknown", data.CustomerCell || ""
+    data.CustomerName || "Unknown", data.CustomerCell || "",
+    parseFloat(data.RefundApplied) || 0, data.RefundReturnNo || ""
   ]);
 
   // Auto-add/update customer for Credit sales
