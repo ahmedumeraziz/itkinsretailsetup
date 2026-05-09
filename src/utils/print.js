@@ -2,9 +2,11 @@ import { fmt, safeParseItems, getExpiryStatus, fmtExpiry } from "./helpers";
 
 // ─── PRINT RECEIPT ────────────────────────────────────────────────────────────
 export function printReceipt(bill) {
-  const isCredit = bill.customerName &&
+  const isCredit = !!(
+    bill.customerName &&
     bill.customerName.trim() !== "" &&
-    bill.customerName !== "Unknown";
+    bill.customerName !== "Unknown"
+  );
 
   // Group items by category
   const grouped = {};
@@ -30,7 +32,20 @@ export function printReceipt(bill) {
     });
   });
 
-  // ── Payment section differs by walk-in vs credit customer ──
+  // ── Discount / refund / totals block ──────────────────────────────────────
+  const billDiscLine = bill.billDiscount > 0
+    ? `<div class="tr" style="color:#a00"><span>Bill Discount (${bill.billDiscountPct}%)</span><span>- PKR ${fmt(bill.billDiscount)}</span></div>`
+    : "";
+
+  // Refund line — shown for both cash and credit
+  const refundLine = bill.refundApplied > 0
+    ? `<div class="tr" style="color:#b05000;font-weight:700">
+         <span>↩ Refund ${bill.refundReturnNo ? `(${bill.refundReturnNo})` : ""}</span>
+         <span>- PKR ${fmt(bill.refundApplied)}</span>
+       </div>`
+    : "";
+
+  // ── Payment section ────────────────────────────────────────────────────────
   let paymentSection = "";
 
   if (isCredit) {
@@ -40,7 +55,7 @@ export function printReceipt(bill) {
       <div class="dv"></div>
       ${prevPending > 0
         ? `<div class="pr"><span>Previous Balance</span><span style="color:#c00;font-weight:700">PKR ${fmt(prevPending)}</span></div>`
-        : `<div class="pr" style="color:#555"><span>Previous Balance</span><span>NIL</span></div>`
+        : `<div class="pr" style="color:#777"><span>Previous Balance</span><span>NIL</span></div>`
       }
       <div class="pr gr" style="border-top:1px dashed #000;padding-top:5px;margin-top:4px">
         <span>GRAND TOTAL DEBIT</span>
@@ -48,13 +63,13 @@ export function printReceipt(bill) {
       </div>
       <div style="text-align:center;font-size:10px;margin-top:5px;color:#555">Credit Sale — Please pay by due date</div>`;
   } else {
-    // Walk-in cash customer
+    // Walk-in / cash customer
     let payHtml = "";
     (bill.payments || []).forEach(p => {
       const amt = parseFloat(p.amount) || 0;
       if (amt > 0) {
         payHtml += `<div class="pr">
-          <span>${p.type === "cash" ? "Cash Paid" : p.type === "refund" ? "Refund Applied" : `Card (****${p.last4 || "----"})`}</span>
+          <span>${p.type === "cash" ? "Cash Paid" : p.type === "refund" ? `Refund (${p.origReturnNo || ""})` : `Card (****${p.last4 || "----"})`}</span>
           <span>${p.type === "refund" ? "- " : ""}PKR ${fmt(amt)}</span>
         </div>`;
       }
@@ -69,10 +84,7 @@ export function printReceipt(bill) {
       </div>`;
   }
 
-  const billDiscLine = bill.billDiscount > 0
-    ? `<div class="tr" style="color:#a00"><span>Bill Discount (${bill.billDiscountPct}%)</span><span>- PKR ${fmt(bill.billDiscount)}</span></div>`
-    : "";
-
+  // Customer line
   const custLine = isCredit
     ? `<div class="bi"><span>Customer: ${bill.customerName}</span><span>${bill.customerCell || ""}</span></div>`
     : "";
@@ -107,12 +119,12 @@ export function printReceipt(bill) {
   <div class="tr"><span>Sub Total</span><span>PKR ${fmt(bill.subTotal)}</span></div>
   ${bill.totalDiscount > 0 ? `<div class="tr" style="color:#a00"><span>Item Discounts</span><span>- PKR ${fmt(bill.totalDiscount)}</span></div>` : ""}
   ${billDiscLine}
-  ${bill.refundApplied > 0 ? `<div class="tr" style="color:#a05000"><span>Refund Applied</span><span>- PKR ${fmt(bill.refundApplied)}</span></div>` : ""}
+  ${refundLine}
   <div class="dv"></div>
   <div class="tr gr"><span>${isCredit ? "THIS BILL TOTAL" : "GRAND TOTAL"}</span><span>PKR ${fmt(bill.grandTotal)}</span></div>
   ${paymentSection}
   <div class="dv"></div>
-  <div class="ft">Thank you for shopping at<br><b>Mart, Bakery & Store!</b></div>
+  <div class="ft">Thank you for shopping at<br><b>Mart, Bakery &amp; Store!</b></div>
   <div style="text-align:center;font-size:9px;margin-top:3px;color:#555">Designed by itkins.com | 0304-7414437</div>
   <br/><br/>
   </body></html>`;
@@ -127,7 +139,7 @@ export function printReceipt(bill) {
 // ─── RETURN RECEIPT ───────────────────────────────────────────────────────────
 export function printReturnReceipt(ret) {
   const items = safeParseItems(ret.Items || ret.items || "[]");
-  const rows = items.map(i =>
+  const rows  = items.map(i =>
     `<div style="display:flex;justify-content:space-between;margin:3px 0;font-size:11px">
       <span>${i.ItemName} x${i.qty}</span>
       <span>PKR ${fmt(parseFloat(i.Price || 0) * i.qty)}</span>
@@ -180,14 +192,14 @@ export function downloadStockPDF(filtered, filterCat, filterCo, filterStatus) {
   const okCount    = filtered.filter(i => (Number(i.Stock) || 0) > 5).length;
 
   const rows = filtered.map((item, i) => {
-    const stk          = Number(item.Stock) || 0;
-    const statusColor  = stk <= 0 ? "#c0392b" : stk <= 5 ? "#d68910" : "#1e8449";
-    const statusText   = stk <= 0 ? "OUT"     : stk <= 5 ? "LOW"     : "OK";
-    const rowBg        = i % 2 === 0 ? "#ffffff" : "#f7f9fc";
-    const es           = getExpiryStatus(item.ExpiryDate);
-    const expiryColor  = es.status === "expired" ? "#c0392b" : es.status === "critical" || es.status === "today" ? "#d35400" : es.status === "warning" ? "#d68910" : es.status === "ok" ? "#1e8449" : "#888";
-    const expiryText   = item.ExpiryDate ? fmtExpiry(item.ExpiryDate) : "—";
-    const expiryLabel  = item.ExpiryDate ? es.label : "";
+    const stk         = Number(item.Stock) || 0;
+    const statusColor = stk <= 0 ? "#c0392b" : stk <= 5 ? "#d68910" : "#1e8449";
+    const statusText  = stk <= 0 ? "OUT"     : stk <= 5 ? "LOW"     : "OK";
+    const rowBg       = i % 2 === 0 ? "#ffffff" : "#f7f9fc";
+    const es          = getExpiryStatus(item.ExpiryDate);
+    const expiryColor = es.status === "expired" ? "#c0392b" : es.status === "critical" || es.status === "today" ? "#d35400" : es.status === "warning" ? "#d68910" : es.status === "ok" ? "#1e8449" : "#888";
+    const expiryText  = item.ExpiryDate ? fmtExpiry(item.ExpiryDate) : "—";
+    const expiryLabel = item.ExpiryDate ? es.label : "";
     return `
       <tr style="background:${rowBg}">
         <td style="text-align:center;color:#888">${i + 1}</td>
@@ -203,7 +215,7 @@ export function downloadStockPDF(filtered, filterCat, filterCo, filterStatus) {
           <div style="color:${expiryColor};font-size:9px;opacity:0.85">${expiryLabel}</div>
         </td>
         <td style="text-align:center">
-          <span style="background:${statusColor};color:#fff;padding:2px 9px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:0.5px">${statusText}</span>
+          <span style="background:${statusColor};color:#fff;padding:2px 9px;border-radius:10px;font-size:10px;font-weight:700">${statusText}</span>
         </td>
       </tr>`;
   }).join("");
