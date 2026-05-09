@@ -54,6 +54,12 @@ export function SalesTab({ sales, setSales, customers, returns }) {
     const isCredit      = sale.PaymentMethod === "Credit";
     const prevPending   = isCredit ? getPrevPending(sale) : 0;
     const refundApplied = getRefundForBill(sale.BillNo);
+    // Find the return number used in this bill
+    const refundReturn  = (returns || []).find(r =>
+      normBill(r.OrigBillNo) === normBill(sale.BillNo) &&
+      (r.UsedInBill === "1" || r.UsedInBill === true)
+    );
+    const refundReturnNo = refundReturn?.ReturnNo || "";
     printReceipt({
       billNo: sale.BillNo, date: sale.Date, time: sale.Time, cashier: sale.Cashier,
       items, subTotal, totalDiscount, itemDiscount,
@@ -64,6 +70,7 @@ export function SalesTab({ sales, setSales, customers, returns }) {
       customerName: sale.CustomerName || "",
       customerCell: sale.CustomerCell || "",
       refundApplied,
+      refundReturnNo,
       prevPending,
     });
   };
