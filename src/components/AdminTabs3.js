@@ -369,6 +369,15 @@ export function SetupTab({ sheetStatus, onRefresh, lastSync, safeCallScript }) {
             style={{ padding: "10px 18px", background: "rgba(255,200,0,0.1)", border: "1px solid rgba(255,200,0,0.3)", color: "#ffd700", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>
             📥 Script v8 (.gs)
           </button>
+          <button className="btn" onClick={async () => {
+            setMsg("🔄 Deduplicating customer sheet...", "info");
+            await safeCallScript({ action: "deduplicateCustomers" });
+            await new Promise(r => setTimeout(r, 3000));
+            setMsg("✅ Customer sheet deduplicated! Sync now to reload.", "ok");
+          }}
+            style={{ padding: "10px 18px", background: "rgba(255,80,80,0.1)", border: "1px solid rgba(255,80,80,0.3)", color: "#ff9090", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>
+            🧹 Fix Duplicate Customers
+          </button>
           {!testResults && (
             <button className="btn" onClick={runTest} disabled={testing}
               style={{ padding: "10px 20px", background: "rgba(0,180,255,0.1)", border: "1px solid rgba(0,180,255,0.3)", color: "#00b4ff", fontSize: 12, fontWeight: 700, borderRadius: 7 }}>
