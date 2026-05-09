@@ -190,32 +190,59 @@ export default function App() {
         try { localCustomers = await dbGetAll("customers"); } catch {}
         const localMap = new Map(localCustomers.map(c => [c.CellNo, c]));
 
-        const parsed = rawCustomers.map(c => {
+        // Helper — strips letters + leading zeros: "B0012" → "12", "0012" → "12"
+        const normB = (b) => { const n = String(b||"").replace(/[^0-9]/g,""); return n.replace(/^0+/,"") || "0"; };
+
+        // STEP 1 — Deduplicate sheet rows by CellNo (sheet may have multiple rows per customer)
+        // Keep first occurrence but MERGE all BillNos from duplicate rows
+        const deduped = new Map();
+        rawCustomers.forEach(c => {
+          const key = (c.CellNo || "").trim();
+          if (!key) return;
+          if (!deduped.has(key)) {
+            deduped.set(key, { ...c });
+          } else {
+            // Merge BillNos from this duplicate into the existing record
+            const existing  = deduped.get(key);
+            const allBills  = [
+              ...(existing.BillNo || "").split(","),
+              ...(c.BillNo        || "").split(","),
+            ].map(b => b.trim()).filter(Boolean);
+            const seenN = new Set();
+            const merged = allBills.filter(b => {
+              const n = normB(b);
+              if (seenN.has(n)) return false;
+              seenN.add(n); return true;
+            });
+            existing.BillNo = merged.join(",");
+          }
+        });
+
+        // STEP 2 — Build final parsed array
+        const parsed = Array.from(deduped.values()).map(c => {
           const localC = localMap.get(c.CellNo);
 
           // Payments: always trust local (preserves deletions & offline additions)
           const sheetPayments = (() => { try { return JSON.parse(c.Payments || "[]"); } catch { return []; } })();
           const payments = (localC?.payments !== undefined && localC?.payments !== null)
-            ? localC.payments
-            : sheetPayments;
+            ? localC.payments : sheetPayments;
 
           // Opening debit: preserve from local if set
           const openingDebit = localC?.openingDebit !== undefined
             ? localC.openingDebit
             : parseFloat(c.OpeningDebit || 0);
 
-          // Deduplicate BillNo field from sheet
-          const normBill = (b) => String(b || "").trim().replace(/^0+/, "") || "0";
-          const seen = new Set();
+          // Final dedup of BillNo field (strip any remaining dupes)
+          const seenB = new Set();
           const uniqueBills = (c.BillNo || "").split(",").filter(Boolean).map(b => b.trim()).filter(b => {
-            const n = normBill(b);
-            if (seen.has(n)) return false;
-            seen.add(n);
-            return true;
+            const n = normB(b);
+            if (seenB.has(n)) return false;
+            seenB.add(n); return true;
           });
 
           return { ...c, BillNo: uniqueBills.join(","), payments, openingDebit };
         });
+
         setCustomers(parsed);
         await dbSaveAll("customers", parsed, "CellNo");
       }
@@ -356,17 +383,25 @@ export default function App() {
       });
     }
 
-    // Sync to Google Sheets
+    // Sync to Google Sheets — saveSale script already handles customer creation/update
     await safeCallScript({ action: "saveSale", ...saleData });
+    // Only call saveCustomer if this is a NEW customer (not already on sheet)
+    // Use functional pattern to read fresh state
     if (customerInfo?.Name && customerInfo.Name !== "Unknown" && customerInfo.CellNo) {
-      // Find existing customer to preserve openingDebit
-      const existingCust = customers.find(c => c.CellNo === customerInfo.CellNo);
-      await safeCallScript({
-        action: "saveCustomer",
-        Name: customerInfo.Name,
-        CellNo: customerInfo.CellNo,
-        BillNo: saleData.BillNo,
-        OpeningDebit: existingCust?.openingDebit ?? 0,
+      setCustomers(prev => {
+        const existingCust = prev.find(c => c.CellNo === customerInfo.CellNo);
+        // Fire saveCustomer only for brand-new customers (not already in DB)
+        // For existing customers, saveSale script already updates BillNo on sheet
+        if (!existingCust) {
+          safeCallScript({
+            action: "saveCustomer",
+            Name: customerInfo.Name,
+            CellNo: customerInfo.CellNo,
+            BillNo: saleData.BillNo,
+            OpeningDebit: 0,
+          });
+        }
+        return prev; // no state change here, just side-effect
       });
     }
   }, [safeCallScript]);
