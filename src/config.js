@@ -1,6 +1,6 @@
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 export const SHEET_ID        = "1_iXcsPI8C1g0UQaAcacbKjsHq9AWI3IRIsCbX2E87qk";
-export const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzt5d_Y-tmzd6HJZLfdNtNWMeHykPgjLBlj8dkcyD25xZvJgMldlbZ4NMCAljjdp5U5/exec";
+export const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz-h1jphatR49vp7AFO6gUJphpl1d-Si1iVEhJaLNiP8tUgbEy9ACEH-DHq4UtE4l0e/exec";
 
 export const SHEET_URLS = {
   items:      `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=0`,
@@ -16,7 +16,7 @@ export const REQUIRED_HEADERS = {
   items:      ["Barcode","Category","Company","ItemName","Price","CostPrice","Discount","Stock","ExpiryDate"],
   categories: ["CategoryName"],
   cashiers:   ["Name","Username","PIN","Role"],
-  sales:      ["BillNo","Date","Time","Cashier","GrandTotal","Discount","FBR","PaymentMethod","ItemsDetail","CustomerName","CustomerCell"],
+  sales:      ["BillNo","Date","Time","Cashier","GrandTotal","Discount","FBR","PaymentMethod","ItemsDetail","CustomerName","CustomerCell","RefundApplied","RefundReturnNo"],
   stocklog:   ["Date","Barcode","ItemName","StockBefore","StockAfter","Reason"],
   customers:  ["Name","CellNo","BillNo","Payments","OpeningDebit"],
   returns:    ["ReturnNo","OrigBillNo","Date","Time","Cashier","Items","RefundAmount","Reason","UsedInBill"],
