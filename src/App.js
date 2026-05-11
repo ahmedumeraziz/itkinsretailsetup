@@ -16,24 +16,63 @@ import AdminScreen  from "./components/AdminScreen";
 
 // ─── GLOBAL STYLES ────────────────────────────────────────────────────────────
 const globalCSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@400;500;600;700&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #0a0e1a; color: #e0e8f0; font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; }
+
+  body {
+    background: #f0f4f8;
+    color: #0f172a;
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  }
+
   ::-webkit-scrollbar { width: 5px; height: 5px; }
-  ::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); }
-  ::-webkit-scrollbar-thumb { background: rgba(0,180,255,0.3); border-radius: 3px; }
-  button.btn { cursor: pointer; font-family: inherit; transition: opacity 0.15s, transform 0.1s; border: none; }
+  ::-webkit-scrollbar-track { background: #e2e8f0; }
+  ::-webkit-scrollbar-thumb { background: #93c5fd; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #2563eb; }
+
+  button.btn {
+    cursor: pointer;
+    font-family: 'Inter', inherit;
+    transition: opacity 0.15s, transform 0.1s, box-shadow 0.15s;
+    border: none;
+  }
   button.btn:hover  { opacity: 0.88; }
   button.btn:active { transform: scale(0.97); }
-  button.btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
-  .fadein { animation: fadeIn 0.35s ease; }
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  button.btn:disabled { opacity: 0.38; cursor: not-allowed; transform: none; }
+
+  input, select, textarea {
+    font-family: 'Inter', inherit;
+  }
+  input:focus, select:focus {
+    border-color: #2563eb !important;
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.12) !important;
+    outline: none;
+  }
+
+  .fadein { animation: fadeIn 0.3s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
   input[type=number]::-webkit-inner-spin-button,
   input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
   input[type=number] { -moz-appearance: textfield; }
-  .qty-focus-input { border-color: rgba(0,180,255,0.7) !important; box-shadow: 0 0 0 2px rgba(0,180,255,0.18); }
-  .kb-selected { background: rgba(0,180,255,0.16) !important; }
+
+  .qty-focus-input {
+    border-color: #2563eb !important;
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.15) !important;
+  }
+  .kb-selected { background: #eff6ff !important; }
+
+  /* Card base */
+  .card {
+    background: #ffffff;
+    border: 1px solid #d1dce8;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+
+  /* Table row hover */
+  .trow:hover { background: #eff6ff !important; }
 `;
 
 // ─── FETCH CSV HELPER ─────────────────────────────────────────────────────────
