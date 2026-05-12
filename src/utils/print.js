@@ -107,8 +107,8 @@ export function printReceipt(bill) {
     .ft{text-align:center;font-size:10px;margin-top:8px}
     @media print{body{margin:0}}
   </style></head><body>
-  <div class="sn">MART - BAKERY</div>
-  <div class="sn">AND STORES</div>
+  <div class="sn">MIAN TRADERS</div>
+  <div class="sn">GUJRANWALA</div>
   <div class="dv"></div>
   <div class="bi"><span>Bill#: ${bill.billNo}</span><span>${bill.date}</span></div>
   <div class="bi"><span>Cashier: ${bill.cashier}</span><span>${bill.time}</span></div>
@@ -124,7 +124,7 @@ export function printReceipt(bill) {
   <div class="tr gr"><span>${isCredit ? "THIS BILL TOTAL" : "GRAND TOTAL"}</span><span>PKR ${fmt(bill.grandTotal)}</span></div>
   ${paymentSection}
   <div class="dv"></div>
-  <div class="ft">Thank you for shopping at<br><b>Mart, Bakery &amp; Store!</b></div>
+  <div class="ft">Thank you for shopping at<br><b>Mian Traders</b></div>
   <div style="text-align:center;font-size:9px;margin-top:3px;color:#555">Designed by itkins.com | 0304-7414437</div>
   <br/><br/>
   </body></html>`;
@@ -149,7 +149,7 @@ export function printReturnReceipt(ret) {
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
   <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Courier New',monospace;font-size:12px;width:302px;padding:10px 6px;color:#000}</style>
   </head><body>
-  <div style="font-size:15px;font-weight:bold;text-align:center">MART - BAKERY - STORE</div>
+  <div style="font-size:15px;font-weight:bold;text-align:center">MIAN TRADERS</div>
   <div style="font-size:13px;font-weight:bold;text-align:center;margin:3px 0">— RETURN RECEIPT —</div>
   <div style="border-top:1px dashed #000;margin:5px 0"></div>
   <div style="display:flex;justify-content:space-between;font-size:10px"><span>Return#: ${ret.ReturnNo}</span><span>${ret.Date}</span></div>
@@ -221,7 +221,7 @@ export function downloadStockPDF(filtered, filterCat, filterCo, filterStatus) {
   }).join("");
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-  <title>Stock Report — itKINS MART</title>
+  <title>Stock Report — Mian Traders</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
     body{font-family:Arial,sans-serif;font-size:12px;color:#222;background:#fff;padding:24px}
@@ -238,7 +238,7 @@ export function downloadStockPDF(filtered, filterCat, filterCo, filterStatus) {
     @media print{body{padding:10px}.footer{position:fixed;bottom:0;width:100%}}
   </style>
   </head><body>
-  <h1>📦 Stock Report — itKINS MART &amp; BAKERY</h1>
+  <h1>📦 Stock Report — MIAN TRADERS</h1>
   <div class="sub">Generated: ${now} &nbsp;·&nbsp; Filter: ${filterDesc} &nbsp;·&nbsp; Total Items: ${filtered.length}</div>
   <div class="cards">
     <div class="card" style="background:#fde8e8;border:1px solid #f5c6c6"><div class="val" style="color:#c0392b">${outCount}</div><div class="lbl">Out of Stock</div></div>
