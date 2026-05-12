@@ -70,9 +70,9 @@ export default function LoginScreen({ cashiers, onLogin, sheetStatus, onRefresh 
           </div>
           <div style={{ fontFamily: "Orbitron", fontSize: 10, color: T.accent, letterSpacing: 5, marginBottom: 6, opacity: 0.7 }}>POINT OF SALE SYSTEM</div>
           <div style={{ fontFamily: "Orbitron", fontSize: 20, color: T.textPrimary, fontWeight: 900, letterSpacing: 1, lineHeight: 1.3 }}>
-            itKINS <span style={{ color: T.accent }}>MART</span>
+            Mian <span style={{ color: T.accent }}>Traders</span>
           </div>
-          <div style={{ color: T.textMuted, fontSize: 12, marginTop: 4, letterSpacing: 2 }}>BAKERY & STORE</div>
+          <div style={{ color: T.textMuted, fontSize: 12, marginTop: 4, letterSpacing: 2 }}>GUJRANWALA</div>
         </div>
 
         {/* Sheet error */}
