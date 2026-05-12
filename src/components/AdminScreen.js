@@ -31,7 +31,7 @@ export default function AdminScreen({
       {/* TOP BAR */}
       <div style={{ background: T.bgTopBar, borderBottom: `1px solid rgba(255,255,255,0.1)`, padding: "10px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, gap: 10, flexWrap: "wrap", boxShadow: "0 2px 8px rgba(0,0,0,0.15)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ fontFamily: "Orbitron", color: "#fff", fontSize: 14, fontWeight: 900, letterSpacing: 1 }}>itKINS POS</div>
+          <div style={{ fontFamily: "Orbitron", color: "#fff", fontSize: 14, fontWeight: 900, letterSpacing: 1 }}>itKINS POS: MIAN TRADERS</div>
           <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.2)" }} />
           <div style={{ color: "rgba(255,255,255,0.75)", fontSize: 12 }}>ADMIN PANEL</div>
           <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "rgba(255,255,255,0.15)", color: "#fff" }}>
