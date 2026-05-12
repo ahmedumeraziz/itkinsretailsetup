@@ -150,7 +150,7 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
       {/* TOP BAR */}
       <div style={topBarStyle}>
         <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
-          <div style={{fontFamily:"Orbitron",color:"#fff",fontSize:13,fontWeight:900,letterSpacing:1}}>itKINS MART</div>
+          <div style={{fontFamily:"Orbitron",color:"#fff",fontSize:13,fontWeight:900,letterSpacing:1}}>itKINS POS: MIAN TRADERS</div>
           <div style={{padding:"3px 10px",borderRadius:20,background:"rgba(255,255,255,0.18)",color:"rgba(255,255,255,0.9)",fontSize:11,fontWeight:600}}>{user?.Name?.toUpperCase()}</div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
