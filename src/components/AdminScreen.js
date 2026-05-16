@@ -5,12 +5,14 @@ import { ItemsTab, CategoriesTab, CashiersTab } from "./AdminTabs1";
 import { SalesTab, ReturnsTab, ProfitTab } from "./AdminTabs2";
 import { StockTab, SetupTab } from "./AdminTabs3";
 import { CustomersTab } from "./CustomersTab";
+import { HRTab } from "./HRTab";          // ← NEW
 
 const TABS = [
   { id: "items",      label: "📦 Items",      admin: false },
   { id: "stock",      label: "📉 Stock",      admin: false },
   { id: "sales",      label: "💰 Sales",      admin: false },
   { id: "profit",     label: "📈 Profit",     admin: true  },
+  { id: "hr",         label: "🧑‍💼 HR",         admin: true  }, // ← NEW
   { id: "customers",  label: "👥 Customers",  admin: false },
   { id: "returns",    label: "↩ Returns",     admin: false },
   { id: "categories", label: "🏷 Categories", admin: true  },
@@ -71,6 +73,7 @@ export default function AdminScreen({
         {tab === "stock"      && <StockTab      items={items} setItems={setItems} safeCallScript={safeCallScript} />}
         {tab === "sales"      && <SalesTab      sales={sales} setSales={setSales} customers={customers} returns={returns} />}
         {tab === "profit"     && <ProfitTab     sales={sales} items={items} returns={returns} />}
+        {tab === "hr"         && <HRTab         sales={sales} items={items} returns={returns} />}  {/* ← NEW */}
         {tab === "customers"  && <CustomersTab  customers={customers} setCustomers={setCustomers} safeCallScript={safeCallScript} sales={sales} currentUser={user} />}
         {tab === "returns"    && <ReturnsTab    returns={returns} />}
         {tab === "categories" && <CategoriesTab categories={categories} setCategories={setCategories} items={items} safeCallScript={safeCallScript} />}
