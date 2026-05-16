@@ -10,6 +10,7 @@ export const SHEET_URLS = {
   stocklog:   `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1905792112`,
   customers:  `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=505470885`,
   returns:    `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1759563627`,
+  hr:         `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=111222333`, // ← HR sheet (gid auto-assigned when script creates it)
 };
 
 export const REQUIRED_HEADERS = {
@@ -20,6 +21,7 @@ export const REQUIRED_HEADERS = {
   stocklog:   ["Date","Barcode","ItemName","StockBefore","StockAfter","Reason"],
   customers:  ["Name","CellNo","BillNo","Payments","OpeningDebit"],
   returns:    ["ReturnNo","OrigBillNo","Date","Time","Cashier","Items","RefundAmount","Reason","UsedInBill"],
+  hr:         ["ID","Type","Name","Category","Amount","Date","Note"],  // ← HR headers
 };
 
 export const SCRIPT_TOKEN = "itKINS@POS#2024$Secure!";
