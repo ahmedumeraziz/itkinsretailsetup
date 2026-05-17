@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { T, inSt, bdgSt } from "../config";
-import { fmt, getNow, safeParseItems } from "../utils/helpers";
+import { T, inSt } from "../config";
+import { fmt, getNow } from "../utils/helpers";
 import { printReceipt } from "../utils/print";
 import StatusBar from "./StatusBar";
 import Calculator from "./Calculator";
