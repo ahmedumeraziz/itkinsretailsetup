@@ -1,16 +1,15 @@
 // ─── SHEET CONFIG ─────────────────────────────────────────────────────────────
 export const SHEET_ID        = "1_iXcsPI8C1g0UQaAcacbKjsHq9AWI3IRIsCbX2E87qk";
-export const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwcEo9F6bysSR0YEEWurV97DTerTTZ40gLQlMEk-EYELEI85T3Ive2-3UUWbJ5wkS1F/exec";
+export const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyZNvFVRBFRz8gIkbxnQDjAp-y2du0-3g2BGrf2EECm1maPqGJdiUwnyEwC4lTsT_IS/exec";
 
 export const SHEET_URLS = {
   items:      `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=0`,
   categories: `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1073637718`,
-  cashiers:   `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=2059868600`,
   sales:      `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=968224820`,
   stocklog:   `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1905792112`,
   customers:  `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=505470885`,
   returns:    `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1759563627`,
-  hr:         `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1091334160`,
+  hr:         `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=111222333`,
 };
 
 export const REQUIRED_HEADERS = {
@@ -18,7 +17,6 @@ export const REQUIRED_HEADERS = {
                "variable_unit_enabled","piece_sale_price","piece_cost_price","pieces_per_box","boxes_per_cotton",
                "box_sale_price","box_cost_price","cotton_sale_price","cotton_cost_price"],
   categories: ["CategoryName"],
-  cashiers:   ["Name","Username","PIN","Role"],
   sales:      ["BillNo","Date","Time","Cashier","GrandTotal","Discount","FBR","PaymentMethod","ItemsDetail","CustomerName","CustomerCell","RefundApplied","RefundReturnNo"],
   stocklog:   ["Date","Barcode","ItemName","StockBefore","StockAfter","Reason"],
   customers:  ["Name","CellNo","BillNo","Payments","OpeningDebit"],
@@ -27,6 +25,16 @@ export const REQUIRED_HEADERS = {
 };
 
 export const SCRIPT_TOKEN = "itKINS@POS#2024$Secure!";
+
+// ─── CASHIERS — managed here, not in Google Sheet ─────────────────────────────
+// To add/change a user: edit this list and redeploy (push to GitHub).
+// Sales column records the Name field of whoever is logged in.
+export const CASHIERS = [
+  { Name: "Ahmed",   Username: "ahmed",   PIN: "2891", Role: "admin"   },
+  { Name: "Wahab",   Username: "wahab",   PIN: "9999", Role: "admin"   },
+  { Name: "Umer",    Username: "umer",    PIN: "2891", Role: "cashier" },
+  { Name: "Cashier", Username: "cashier", PIN: "8888", Role: "cashier" },
+];
 
 // ─── LIGHT THEME TOKENS ───────────────────────────────────────────────────────
 export const T = {
