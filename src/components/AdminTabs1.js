@@ -17,6 +17,20 @@ const btn  = (variant="primary") => {
   return { ...map[variant], padding: "5px 11px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer" };
 };
 
+// ── Variable Unit Auto-Calc ────────────────────────────────────────────────
+function calcUnitPrices(form) {
+  const pieceSale = parseFloat(form.piece_sale_price) || 0;
+  const pieceCost = parseFloat(form.piece_cost_price) || 0;
+  const ppb       = parseInt(form.pieces_per_box)     || 0;
+  const bpc       = parseInt(form.boxes_per_cotton)   || 0;
+  return {
+    box_sale_price:    form._boxSaleOverride    ? form.box_sale_price    : (pieceSale * ppb  || ""),
+    box_cost_price:    form._boxCostOverride    ? form.box_cost_price    : (pieceCost * ppb  || ""),
+    cotton_sale_price: form._cottonSaleOverride ? form.cotton_sale_price : (pieceSale * ppb * bpc || ""),
+    cotton_cost_price: form._cottonCostOverride ? form.cotton_cost_price : (pieceCost * ppb * bpc || ""),
+  };
+}
+
 // ── ITEMS TAB ─────────────────────────────────────────────────────────────────
 export function ItemsTab({ items, setItems, categories, safeCallScript }) {
   const [editing,   setEditing]   = useState(null);
@@ -24,27 +38,77 @@ export function ItemsTab({ items, setItems, categories, safeCallScript }) {
   const [search,    setSearch]    = useState("");
   const [filterCat, setFilterCat] = useState("All");
   const [filterCo,  setFilterCo]  = useState("All");
+
   const companies = [...new Set(items.map(i => i.Company || "").filter(Boolean))].sort();
   const filtered  = items.filter(i =>
     (filterCat === "All" || i.Category === filterCat) &&
     (filterCo  === "All" || i.Company  === filterCo)  &&
     (!search || i.ItemName?.toLowerCase().includes(search.toLowerCase()) || i.Barcode?.includes(search))
   );
-  const startAdd  = () => { setEditing("new"); setForm({ Barcode:"", Category: categories[0]||"", Company:"", ItemName:"", Price:"", CostPrice:"", Discount:"0", Stock:"", ExpiryDate:"" }); };
-  const startEdit = item => { setEditing(item.Barcode); setForm({ ...item }); };
+
+  const blankVU = () => ({
+    variable_unit_enabled: false,
+    piece_sale_price: "", piece_cost_price: "",
+    pieces_per_box: "", boxes_per_cotton: "",
+    box_sale_price: "", box_cost_price: "",
+    cotton_sale_price: "", cotton_cost_price: "",
+    _boxSaleOverride: false, _boxCostOverride: false,
+    _cottonSaleOverride: false, _cottonCostOverride: false,
+  });
+
+  const startAdd  = () => { setEditing("new"); setForm({ Barcode:"", Category: categories[0]||"", Company:"", ItemName:"", Price:"", CostPrice:"", Discount:"0", Stock:"", ExpiryDate:"", ...blankVU() }); };
+  const startEdit = item => { setEditing(item.Barcode); setForm({ ...blankVU(), ...item }); };
+
+  const setF = (key, val) => setForm(p => {
+    const next = { ...p, [key]: val };
+    // Re-compute auto prices unless overridden
+    const auto = calcUnitPrices(next);
+    return { ...next, ...auto };
+  });
+
+  const resetOverrides = () => setForm(p => {
+    const next = { ...p, _boxSaleOverride: false, _boxCostOverride: false, _cottonSaleOverride: false, _cottonCostOverride: false };
+    return { ...next, ...calcUnitPrices(next) };
+  });
+
+  // When Price/CostPrice change, also sync piece_sale_price / piece_cost_price
+  const setPriceField = (key, val) => setForm(p => {
+    const next = { ...p, [key]: val };
+    if (key === "Price")     next.piece_sale_price = val;
+    if (key === "CostPrice") next.piece_cost_price = val;
+    const auto = calcUnitPrices(next);
+    return { ...next, ...auto };
+  });
+
   const save = async () => {
     if (!form.Barcode || !form.ItemName || !form.Price) return;
-    if (editing === "new") setItems(p => [...p, form]); else setItems(p => p.map(i => i.Barcode === editing ? form : i));
-    try { await dbPut("items", { ...form, id: form.Barcode }); } catch {}
-    safeCallScript({ action: editing === "new" ? "addItem" : "editItem", ...form });
+    // If VU enabled, validate
+    if (form.variable_unit_enabled) {
+      if (!form.pieces_per_box || parseInt(form.pieces_per_box) < 1) { alert("Enter Pieces per Box (≥1)"); return; }
+      if (!form.boxes_per_cotton || parseInt(form.boxes_per_cotton) < 1) { alert("Enter Boxes per Cotton (≥1)"); return; }
+      if (!form.piece_sale_price || parseFloat(form.piece_sale_price) <= 0) { alert("Piece Sale Price must be > 0"); return; }
+    }
+    // Build clean form — strip internal override flags before saving
+    const { _boxSaleOverride, _boxCostOverride, _cottonSaleOverride, _cottonCostOverride, ...cleanForm } = form;
+    if (editing === "new") setItems(p => [...p, cleanForm]);
+    else setItems(p => p.map(i => i.Barcode === editing ? cleanForm : i));
+    try { await dbPut("items", { ...cleanForm, id: cleanForm.Barcode }); } catch {}
+    safeCallScript({ action: editing === "new" ? "addItem" : "editItem", ...cleanForm });
     setEditing(null);
   };
+
   const del = async bc => {
     if (!window.confirm("Delete this item?")) return;
     setItems(p => p.filter(i => i.Barcode !== bc));
     try { await dbDelete("items", bc); } catch {}
     safeCallScript({ action: "deleteItem", Barcode: bc });
   };
+
+  const vu = form.variable_unit_enabled;
+  const ppb = parseInt(form.pieces_per_box) || 0;
+  const bpc = parseInt(form.boxes_per_cotton) || 0;
+  const ppc = ppb * bpc;
+
   return (
     <div>
       {/* Filters */}
@@ -64,27 +128,101 @@ export function ItemsTab({ items, setItems, categories, safeCallScript }) {
       {editing && (
         <div style={{ ...card, padding: 18, marginBottom: 16, borderLeft: `4px solid ${T.accent}` }}>
           <div style={{ color: T.accent, fontSize: 11, letterSpacing: 2, marginBottom: 13, fontWeight: 700 }}>{editing==="new"?"➕ ADD NEW ITEM":"✏️ EDIT ITEM"}</div>
+
+          {/* Core fields */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(165px,1fr))", gap: 11 }}>
-            {[["Barcode","Barcode","text"],["ItemName","Item Name","text"],["Company","Company","text"],["Price","Selling Price (PKR)","number"],["CostPrice","Cost Price (PKR)","number"],["Discount","Item Discount (PKR)","number"],["Stock","Stock Qty","number"]].map(([k,l,t])=>(
+            {[["Barcode","Barcode","text"],["ItemName","Item Name","text"],["Company","Company","text"]].map(([k,l,t])=>(
               <div key={k}><label style={lbSt}>{l}</label><input type={t} value={form[k]||""} onChange={e=>setForm(p=>({...p,[k]:e.target.value}))} style={{ ...inSt, background: T.bgCard }} /></div>
             ))}
-            <div>
-              <label style={lbSt}>EXPIRY DATE</label>
-              <input type="date" value={form.ExpiryDate||""} onChange={e=>setForm(p=>({...p,ExpiryDate:e.target.value}))}
-                style={{ ...inSt, background: T.bgCard, colorScheme: "light", borderColor: form.ExpiryDate ? getExpiryStatus(form.ExpiryDate).color : T.border }} />
-              {form.ExpiryDate&&(()=>{const es=getExpiryStatus(form.ExpiryDate);return<div style={{marginTop:5,fontSize:11,color:es.color,fontWeight:600}}>{es.label}</div>;})()}
-            </div>
             <div><label style={lbSt}>Category</label>
               <select value={form.Category||""} onChange={e=>setForm(p=>({...p,Category:e.target.value}))} style={{ ...slSt, background: T.bgCard }}>
                 {categories.map(c=><option key={c}>{c}</option>)}
               </select>
             </div>
+            <div><label style={lbSt}>Selling Price (PKR)</label><input type="number" value={form.Price||""} onChange={e=>setPriceField("Price",e.target.value)} style={{ ...inSt, background: T.bgCard }} /></div>
+            <div><label style={lbSt}>Cost Price (PKR)</label><input type="number" value={form.CostPrice||""} onChange={e=>setPriceField("CostPrice",e.target.value)} style={{ ...inSt, background: T.bgCard }} /></div>
+            <div><label style={lbSt}>Item Discount (PKR)</label><input type="number" value={form.Discount||""} onChange={e=>setForm(p=>({...p,Discount:e.target.value}))} style={{ ...inSt, background: T.bgCard }} /></div>
+            <div><label style={lbSt}>Stock Qty</label><input type="number" value={form.Stock||""} onChange={e=>setForm(p=>({...p,Stock:e.target.value}))} style={{ ...inSt, background: T.bgCard }} /></div>
+            <div>
+              <label style={lbSt}>Expiry Date</label>
+              <input type="date" value={form.ExpiryDate||""} onChange={e=>setForm(p=>({...p,ExpiryDate:e.target.value}))}
+                style={{ ...inSt, background: T.bgCard, colorScheme: "light", borderColor: form.ExpiryDate ? getExpiryStatus(form.ExpiryDate).color : T.border }} />
+              {form.ExpiryDate&&(()=>{const es=getExpiryStatus(form.ExpiryDate);return<div style={{marginTop:5,fontSize:11,color:es.color,fontWeight:600}}>{es.label}</div>;})()}
+            </div>
           </div>
+
+          {/* Profit preview */}
           {form.Price&&form.CostPrice&&parseFloat(form.Price)>0&&(
             <div style={{marginTop:10,padding:"8px 13px",background:T.successLight,border:`1px solid ${T.successBorder}`,borderRadius:7,fontSize:11,color:T.success}}>
               Profit: PKR {fmt(parseFloat(form.Price)-parseFloat(form.CostPrice))} · Margin: {((parseFloat(form.Price)-parseFloat(form.CostPrice))/parseFloat(form.Price)*100).toFixed(1)}%
             </div>
           )}
+
+          {/* ── Variable Unit Section ── */}
+          <div style={{ marginTop: 18, borderTop: `1px solid ${T.border}`, paddingTop: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <input type="checkbox" checked={!!vu} onChange={e => setForm(p => ({ ...p, variable_unit_enabled: e.target.checked }))}
+                  style={{ width: 16, height: 16, accentColor: T.accent, cursor: "pointer" }} />
+                <span style={{ color: T.accent, fontWeight: 700, fontSize: 12, letterSpacing: 1 }}>ENABLE VARIABLE UNITS (Box / Cotton)</span>
+              </label>
+              <span style={{ fontSize: 10, color: T.textMuted }}>— sell in Pieces, Boxes, or Cottons</span>
+            </div>
+
+            {vu && (
+              <div style={{ background: T.accentLight, border: `1px solid ${T.accentBorder}`, borderRadius: 10, padding: 14 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 12 }}>
+
+                  {/* Piece prices — already set from Price/CostPrice fields above */}
+                  <div>
+                    <label style={lbSt}>Sale Price per Piece (PKR)</label>
+                    <input type="number" value={form.piece_sale_price||""} onChange={e=>setF("piece_sale_price",e.target.value)} style={{ ...inSt, background: T.bgCard }} placeholder="Auto from Selling Price" />
+                  </div>
+                  <div>
+                    <label style={lbSt}>Cost Price per Piece (PKR)</label>
+                    <input type="number" value={form.piece_cost_price||""} onChange={e=>setF("piece_cost_price",e.target.value)} style={{ ...inSt, background: T.bgCard }} placeholder="Auto from Cost Price" />
+                  </div>
+
+                  {/* Pieces per Box + Box Sale Price */}
+                  <div>
+                    <label style={lbSt}>Pieces per Box</label>
+                    <input type="number" min="1" value={form.pieces_per_box||""} onChange={e=>setF("pieces_per_box",e.target.value)} style={{ ...inSt, background: T.bgCard }} placeholder="e.g. 12" />
+                  </div>
+                  <div>
+                    <label style={lbSt}>Box Sale Price (PKR) <span style={{ color: T.textMuted, fontWeight: 400 }}>auto</span></label>
+                    <input type="number" value={form.box_sale_price||""}
+                      onChange={e => setForm(p => ({ ...p, box_sale_price: e.target.value, _boxSaleOverride: true }))}
+                      style={{ ...inSt, background: T.bgCard }} placeholder="Auto-calculated" />
+                  </div>
+
+                  {/* Boxes per Cotton + Cotton Sale Price */}
+                  <div>
+                    <label style={lbSt}>Boxes per Cotton</label>
+                    <input type="number" min="1" value={form.boxes_per_cotton||""} onChange={e=>setF("boxes_per_cotton",e.target.value)} style={{ ...inSt, background: T.bgCard }} placeholder="e.g. 20" />
+                  </div>
+                  <div>
+                    <label style={lbSt}>Cotton Sale Price (PKR) <span style={{ color: T.textMuted, fontWeight: 400 }}>auto</span></label>
+                    <input type="number" value={form.cotton_sale_price||""}
+                      onChange={e => setForm(p => ({ ...p, cotton_sale_price: e.target.value, _cottonSaleOverride: true }))}
+                      style={{ ...inSt, background: T.bgCard }} placeholder="Auto-calculated" />
+                  </div>
+
+                </div>
+
+                {/* Live summary */}
+                {ppb > 0 && bpc > 0 && (
+                  <div style={{ marginTop: 12, padding: "9px 13px", background: "#fff", borderRadius: 8, border: `1px solid ${T.accentBorder}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                    <span style={{ color: T.accent, fontWeight: 700, fontSize: 13 }}>
+                      1 Cotton = {bpc} Boxes = {ppc} Pieces
+                    </span>
+                    {form.cotton_sale_price > 0 && <span style={{ color: T.success, fontWeight: 700, fontSize: 12 }}>Cotton: PKR {fmt(form.cotton_sale_price)} &nbsp;·&nbsp; Box: PKR {fmt(form.box_sale_price)} &nbsp;·&nbsp; Piece: PKR {fmt(form.piece_sale_price)}</span>}
+                    <button className="btn" onClick={resetOverrides} style={{ ...btn("ghost"), fontSize: 10, padding: "4px 10px" }}>↺ Reset to Auto</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div style={{display:"flex",gap:9,marginTop:13}}>
             <button className="btn" onClick={save} style={{ ...btn("success"), padding:"9px 22px", fontSize:13 }}>✓ Save</button>
             <button className="btn" onClick={()=>setEditing(null)} style={{ ...btn("ghost"), padding:"9px 16px", fontSize:12 }}>Cancel</button>
@@ -94,16 +232,18 @@ export function ItemsTab({ items, setItems, categories, safeCallScript }) {
 
       {/* Table */}
       <div style={card}>
-        <div style={{display:"grid",gridTemplateColumns:"110px 1fr 100px 100px 75px 70px 70px 70px 105px 90px",...thSt}}>
+        <div style={{display:"grid",gridTemplateColumns:"110px 1fr 100px 100px 75px 70px 70px 70px 80px 105px 90px",...thSt}}>
           <div>Barcode</div><div>Item Name</div><div>Category</div><div>Company</div>
           <div style={{textAlign:"right"}}>Price</div><div style={{textAlign:"right"}}>Cost</div>
           <div style={{textAlign:"right"}}>Disc</div><div style={{textAlign:"right"}}>Stock</div>
+          <div style={{textAlign:"center"}}>Units</div>
           <div style={{textAlign:"center"}}>Expiry</div><div style={{textAlign:"center"}}>Actions</div>
         </div>
         {filtered.map((item,idx)=>{
           const stk=Number(item.Stock)||0;
+          const hasVU = item.variable_unit_enabled && parseInt(item.pieces_per_box) > 0 && parseInt(item.boxes_per_cotton) > 0;
           return(
-            <div key={idx} style={{display:"grid",gridTemplateColumns:"110px 1fr 100px 100px 75px 70px 70px 70px 105px 90px",padding:"9px 12px",borderBottom:`1px solid ${T.borderLight}`,alignItems:"center",background:stk<=0?"#fef2f2":stk<=5?"#fffbeb":"transparent",transition:"background 0.15s"}}
+            <div key={idx} style={{display:"grid",gridTemplateColumns:"110px 1fr 100px 100px 75px 70px 70px 70px 80px 105px 90px",padding:"9px 12px",borderBottom:`1px solid ${T.borderLight}`,alignItems:"center",background:stk<=0?"#fef2f2":stk<=5?"#fffbeb":"transparent",transition:"background 0.15s"}}
               onMouseEnter={e=>e.currentTarget.style.background=T.bgHover} onMouseLeave={e=>e.currentTarget.style.background=stk<=0?"#fef2f2":stk<=5?"#fffbeb":"transparent"}>
               <div style={{color:T.textMuted,fontSize:11}}>{item.Barcode}</div>
               <div style={{color:T.textPrimary,fontSize:12,fontWeight:600}}>{item.ItemName}</div>
@@ -113,6 +253,11 @@ export function ItemsTab({ items, setItems, categories, safeCallScript }) {
               <div style={{color:T.success,textAlign:"right",fontSize:11}}>{item.CostPrice?fmt(item.CostPrice):"—"}</div>
               <div style={{color:parseFloat(item.Discount)>0?T.posGold:T.textMuted,textAlign:"right",fontSize:12}}>{item.Discount}</div>
               <div style={{textAlign:"right",fontWeight:700,fontSize:12,color:stk<=0?T.danger:stk<=5?T.warning:T.success}}>{item.Stock}{stk<=0?" ❌":stk<=5?" ⚠️":""}</div>
+              <div style={{textAlign:"center"}}>
+                {hasVU
+                  ? <span style={{background:T.accentLight,color:T.accent,border:`1px solid ${T.accentBorder}`,borderRadius:10,fontSize:9,padding:"2px 7px",fontWeight:700}}>📦 VU</span>
+                  : <span style={{color:T.textMuted,fontSize:9}}>pcs</span>}
+              </div>
               {(()=>{const es=getExpiryStatus(item.ExpiryDate);return(
                 <div style={{textAlign:"center"}}>
                   <div style={{color:es.color,fontSize:10,fontWeight:700}}>{fmtExpiry(item.ExpiryDate)}</div>
