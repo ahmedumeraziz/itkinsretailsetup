@@ -149,13 +149,14 @@ export function SetupTab({ sheetStatus, onRefresh, lastSync, safeCallScript }) {
   const [expandedSheet, setExpandedSheet] = useState(null);
 
   const SHEET_META = {
-    items:      { label:"📦 Items",       tabName:"Items",      desc:"Products, barcodes, prices, stock & expiry" },
+    items:      { label:"📦 Items",       tabName:"Items",      desc:"Products, barcodes, prices, stock, expiry & variable unit config" },
     categories: { label:"🏷 Categories",  tabName:"Categories", desc:"Product category names" },
     cashiers:   { label:"👤 Cashier",     tabName:"Cashier",    desc:"Staff accounts, PINs, roles" },
     sales:      { label:"💰 Sales",       tabName:"Sales",      desc:"Bills, items sold, totals, payment method" },
     stocklog:   { label:"📉 StockLog",    tabName:"StockLog",   desc:"Stock adjustments and deductions log" },
     customers:  { label:"🧑 Customer",    tabName:"Customer",   desc:"Credit customers, payments, opening debit" },
     returns:    { label:"↩ Returns",      tabName:"Returns",    desc:"Return and refund records" },
+    hr:         { label:"🧑‍💼 HR",          tabName:"HR",         desc:"Investments, expenses, returns & monthly notes" },
     script:     { label:"⚡ Apps Script", tabName:null,         desc:"Google Apps Script webhook" },
   };
 
@@ -191,7 +192,7 @@ export function SetupTab({ sheetStatus, onRefresh, lastSync, safeCallScript }) {
 
   const downloadScript = () => {
     const txt=getScriptText(),blob=new Blob([txt],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");
-    a.href=url; a.download="POS_Script_v8.gs"; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    a.href=url; a.download="POS_Script_v9.gs"; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
   };
 
   const checkDB = async () => {
@@ -334,7 +335,7 @@ export function SetupTab({ sheetStatus, onRefresh, lastSync, safeCallScript }) {
             {generating?<><span style={spinSt("#a78bfa")}/>Generating...</>:"🏗 Generate / Fix All Sheets"}
           </button>
           {testResults&&<button className="btn" onClick={runTest} disabled={testing||repairing||generating} style={{padding:"10px 16px",background:T.accentLight,border:`1px solid ${T.accentBorder}`,color:T.accent,fontSize:12,fontWeight:700,borderRadius:8}}>🔄 Re-Test</button>}
-          <button className="btn" onClick={downloadScript} style={{padding:"10px 18px",background:"linear-gradient(135deg,#b45309,#d97706)",color:"#fff",fontSize:12,fontWeight:700,borderRadius:8,border:"none"}}>📥 Script v8 (.gs)</button>
+          <button className="btn" onClick={downloadScript} style={{padding:"10px 18px",background:"linear-gradient(135deg,#b45309,#d97706)",color:"#fff",fontSize:12,fontWeight:700,borderRadius:8,border:"none"}}>📥 Script v9 (.gs)</button>
           <button className="btn" onClick={async()=>{setMsg("🔄 Deduplicating customer sheet...", "info");await safeCallScript({action:"deduplicateCustomers"});await new Promise(r=>setTimeout(r,3000));setMsg("✅ Done! Click Sync Now to reload.", "ok");}}
             style={{padding:"10px 18px",background:T.dangerLight,border:`1px solid ${T.dangerBorder}`,color:T.danger,fontSize:12,fontWeight:700,borderRadius:8}}>
             🧹 Fix Duplicate Customers
