@@ -187,7 +187,7 @@ export function SetupTab({ sheetStatus, onRefresh, lastSync, safeCallScript }) {
     await new Promise(r=>setTimeout(r,5000));
     const r=await deepTestConnections(); setTestResults(r); setGenerating(false);
     const allOk=Object.values(r).every(v=>v.ok);
-    setMsg(allOk?"✅ All sheets generated!":"⚠ Re-deploy script v8 and try again.", allOk?"ok":"error");
+    setMsg(allOk?"✅ All sheets generated!":"⚠ Re-deploy script v9 and try again.", allOk?"ok":"error");
   };
 
   const downloadScript = () => {
