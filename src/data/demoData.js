@@ -13,12 +13,6 @@ export const DEMO_ITEMS = [
 
 export const DEMO_CATEGORIES = ["Dairy", "Grocery", "Beverages", "Bakery", "Snacks"];
 
-export const DEMO_CASHIERS = [
-  { Name: "Admin",  Username: "admin",  PIN: "1234", Role: "admin"   },
-  { Name: "Rizwan", Username: "rizwan", PIN: "5678", Role: "cashier" },
-  { Name: "Ahmed",  Username: "ahmed",  PIN: "9999", Role: "cashier" },
-];
-
 export const DEMO_SALES = [
   { BillNo: "0115", Date: "26/04/2026", Time: "10:15 AM", Cashier: "Rizwan", GrandTotal: "451",  Discount: "0",  FBR: "1", PaymentMethod: "Cash", CustomerName: "Ali Khan",    CustomerCell: "0300-1234567", ItemsDetail: '[{"Barcode":"1001","ItemName":"Pepsi 1.5L","Category":"Beverages","Price":"120","CostPrice":"100","Discount":"0","qty":2},{"Barcode":"1003","ItemName":"Bread Loaf","Category":"Bakery","Price":"90","CostPrice":"70","Discount":"0","qty":2}]' },
   { BillNo: "0116", Date: "26/04/2026", Time: "11:30 AM", Cashier: "Ahmed",  GrandTotal: "1161", Discount: "60", FBR: "1", PaymentMethod: "Card", CustomerName: "Sara Ahmed",  CustomerCell: "0312-9876543", ItemsDetail: '[{"Barcode":"1006","ItemName":"Olpers Milk 1L","Category":"Dairy","Price":"175","CostPrice":"155","Discount":"10","qty":4},{"Barcode":"5428","ItemName":"Macroni Mix-KG","Category":"Grocery","Price":"215","CostPrice":"190","Discount":"5","qty":2}]' },
