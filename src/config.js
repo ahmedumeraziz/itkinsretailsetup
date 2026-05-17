@@ -1,6 +1,6 @@
 // ─── SHEET CONFIG ─────────────────────────────────────────────────────────────
 export const SHEET_ID        = "1_iXcsPI8C1g0UQaAcacbKjsHq9AWI3IRIsCbX2E87qk";
-export const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyWB66GME09uIgJsUTttfXgwDmLo09AETMg0xvaHCBkBWUiGA2M4ja58RkI5bSU64iH/exec";
+export const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyZNvFVRBFRz8gIkbxnQDjAp-y2du0-3g2BGrf2EECm1maPqGJdiUwnyEwC4lTsT_IS/exec";
 
 export const SHEET_URLS = {
   items:      `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=0`,
@@ -10,18 +10,20 @@ export const SHEET_URLS = {
   stocklog:   `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1905792112`,
   customers:  `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=505470885`,
   returns:    `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1759563627`,
-  hr:         `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1091334160`, // ← HR sheet (gid auto-assigned when script creates it)
+  hr:         `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=111222333`,
 };
 
 export const REQUIRED_HEADERS = {
-  items:      ["Barcode","Category","Company","ItemName","Price","CostPrice","Discount","Stock","ExpiryDate"],
+  items:      ["Barcode","Category","Company","ItemName","Price","CostPrice","Discount","Stock","ExpiryDate",
+               "variable_unit_enabled","piece_sale_price","piece_cost_price","pieces_per_box","boxes_per_cotton",
+               "box_sale_price","box_cost_price","cotton_sale_price","cotton_cost_price"],
   categories: ["CategoryName"],
   cashiers:   ["Name","Username","PIN","Role"],
   sales:      ["BillNo","Date","Time","Cashier","GrandTotal","Discount","FBR","PaymentMethod","ItemsDetail","CustomerName","CustomerCell","RefundApplied","RefundReturnNo"],
   stocklog:   ["Date","Barcode","ItemName","StockBefore","StockAfter","Reason"],
   customers:  ["Name","CellNo","BillNo","Payments","OpeningDebit"],
   returns:    ["ReturnNo","OrigBillNo","Date","Time","Cashier","Items","RefundAmount","Reason","UsedInBill"],
-  hr:         ["ID","Type","Name","Category","Amount","Date","Note"],  // ← HR headers
+  hr:         ["ID","Type","Name","Category","Amount","Date","Note"],
 };
 
 export const SCRIPT_TOKEN = "itKINS@POS#2024$Secure!";
