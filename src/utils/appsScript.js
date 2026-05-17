@@ -51,6 +51,7 @@ function doPost(e) {
     var result;
     switch (data.action) {
       case "saveSale":         result = saveSale(ss, data);         break;
+      case "editSale":         result = editSale(ss, data);         break;
       case "saveCustomer":     result = saveCustomer(ss, data);     break;
       case "deleteCustomer":   result = deleteCustomer(ss, data);   break;
       case "savePayment":      result = savePayment(ss, data);      break;
@@ -325,6 +326,38 @@ function deduplicateCustomerSheet(ss) {
   toDelete.reverse().forEach(function(i) {
     sh.deleteRow(i + 2);
   });
+}
+
+// ── EDIT SALE ─────────────────────────────────────────────────────────────────
+function editSale(ss, data) {
+  var sh = ss.getSheetByName(SHEET_SALES);
+  if (!sh) return { status: "error", message: "Sales sheet not found" };
+  var hdrMap   = getHeaders(sh);
+  var billIdx  = hdrMap["BillNo"];
+  if (billIdx === undefined) return { status: "error", message: "BillNo column not found" };
+  var targetBill = String(data.BillNo || "").trim().replace(/[^0-9]/g, "").replace(/^0+/, "") || "0";
+  var lastRow = sh.getLastRow();
+  var rowNum  = -1;
+  if (lastRow > 1) {
+    var col = sh.getRange(2, billIdx + 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < col.length; i++) {
+      var v = String(col[i][0] || "").trim().replace(/[^0-9]/g, "").replace(/^0+/, "") || "0";
+      if (v === targetBill) { rowNum = i + 2; break; }
+    }
+  }
+  if (rowNum === -1) return { status: "error", message: "Bill not found: " + data.BillNo };
+  var fields = {
+    "Date": data.Date, "Time": data.Time, "Cashier": data.Cashier,
+    "GrandTotal": parseFloat(data.GrandTotal) || 0,
+    "Discount":   parseFloat(data.Discount)   || 0,
+    "PaymentMethod": data.PaymentMethod || "Cash",
+    "CustomerName":  data.CustomerName  || "",
+    "CustomerCell":  data.CustomerCell  || "",
+  };
+  Object.keys(fields).forEach(function(col) {
+    if (hdrMap[col] !== undefined) sh.getRange(rowNum, hdrMap[col] + 1).setValue(fields[col]);
+  });
+  return { status: "ok", message: "Bill updated: " + data.BillNo };
 }
 
 // ── SAVE RETURN ───────────────────────────────────────────────────────────────
