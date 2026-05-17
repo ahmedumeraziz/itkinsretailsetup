@@ -1,7 +1,7 @@
 // ─── APPS SCRIPT TEXT ─────────────────────────────────────────────────────────
 export function getScriptText() {
   return `// ═══════════════════════════════════════════════════════════════
-//  itKINS POS — Apps Script v9.0  (+ HR Module)
+//  itKINS POS — Apps Script v8.0
 //  Designed by itKINS → Engr. Ahmed Umer (0304-7414437)
 //  Setup: Apps Script → Delete all → Paste → Save → Deploy →
 //         New Deployment → Web App → Anyone → Copy /exec URL
@@ -16,17 +16,20 @@ var SHEET_SALES      = "Sales";
 var SHEET_STOCKLOG   = "StockLog";
 var SHEET_CUSTOMER   = "Customer";
 var SHEET_RETURNS    = "Returns";
-var SHEET_HR         = "HR";          // ← NEW
+
+var SHEET_HR         = "HR";
 
 var HEADERS = {
-  Items:      ["Barcode","Category","Company","ItemName","Price","CostPrice","Discount","Stock","ExpiryDate"],
+  Items:      ["Barcode","Category","Company","ItemName","Price","CostPrice","Discount","Stock","ExpiryDate",
+               "variable_unit_enabled","piece_sale_price","piece_cost_price","pieces_per_box","boxes_per_cotton",
+               "box_sale_price","box_cost_price","cotton_sale_price","cotton_cost_price"],
   Categories: ["CategoryName"],
   Cashier:    ["Name","Username","PIN","Role"],
   Sales:      ["BillNo","Date","Time","Cashier","GrandTotal","Discount","FBR","PaymentMethod","ItemsDetail","CustomerName","CustomerCell","RefundApplied","RefundReturnNo"],
   StockLog:   ["Date","Barcode","ItemName","StockBefore","StockAfter","Reason"],
   Customer:   ["Name","CellNo","BillNo","Payments","OpeningDebit"],
   Returns:    ["ReturnNo","OrigBillNo","Date","Time","Cashier","Items","RefundAmount","Reason","UsedInBill"],
-  HR:         ["ID","Type","Name","Category","Amount","Date","Note"]  // ← NEW
+  HR:         ["ID","Type","Name","Category","Amount","Date","Note"]
 };
 
 function makeResp(data) {
@@ -34,7 +37,7 @@ function makeResp(data) {
 }
 
 function doGet(e) {
-  return makeResp({ status: "ok", message: "itKINS Script v9 Running", time: new Date().toString() });
+  return makeResp({ status: "ok", message: "itKINS Script v8 Running", time: new Date().toString() });
 }
 
 function doPost(e) {
@@ -47,28 +50,28 @@ function doPost(e) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var result;
     switch (data.action) {
-      case "saveSale":             result = saveSale(ss, data);             break;
-      case "saveCustomer":         result = saveCustomer(ss, data);         break;
-      case "deleteCustomer":       result = deleteCustomer(ss, data);       break;
-      case "savePayment":          result = savePayment(ss, data);          break;
-      case "syncPayments":         result = syncPayments(ss, data);         break;
-      case "adjustStock":          result = adjustStock(ss, data);          break;
-      case "addItem":              result = addItem(ss, data);              break;
-      case "editItem":             result = editItem(ss, data);             break;
-      case "deleteItem":           result = deleteItem(ss, data);           break;
-      case "addCategory":          result = addCategory(ss, data);          break;
-      case "deleteCategory":       result = deleteCategory(ss, data);       break;
-      case "addCashier":           result = addCashier(ss, data);           break;
-      case "editCashier":          result = editCashier(ss, data);          break;
-      case "deleteCashier":        result = deleteCashier(ss, data);        break;
-      case "saveReturn":           result = saveReturn(ss, data);           break;
-      case "markReturnUsed":       result = markReturnUsed(ss, data);       break;
-      case "saveHREntry":          result = saveHREntry(ss, data);          break;  // ← NEW
-      case "ensureHeaders":        result = ensureAllHeaders(ss);           break;
-      case "generateAllSheets":    result = generateAllSheets(ss);          break;
-      case "deduplicateCustomers": result = runDeduplicateCustomers(ss);    break;
-      case "ping":                 result = { status: "ok", message: "pong" }; break;
-      default:                     result = { status: "error", message: "Unknown action: " + data.action };
+      case "saveSale":         result = saveSale(ss, data);         break;
+      case "saveCustomer":     result = saveCustomer(ss, data);     break;
+      case "deleteCustomer":   result = deleteCustomer(ss, data);   break;
+      case "savePayment":      result = savePayment(ss, data);      break;
+      case "syncPayments":     result = syncPayments(ss, data);     break;
+      case "adjustStock":      result = adjustStock(ss, data);      break;
+      case "addItem":          result = addItem(ss, data);          break;
+      case "editItem":         result = editItem(ss, data);         break;
+      case "deleteItem":       result = deleteItem(ss, data);       break;
+      case "addCategory":      result = addCategory(ss, data);      break;
+      case "deleteCategory":   result = deleteCategory(ss, data);   break;
+      case "addCashier":       result = addCashier(ss, data);       break;
+      case "editCashier":      result = editCashier(ss, data);      break;
+      case "deleteCashier":    result = deleteCashier(ss, data);    break;
+      case "saveReturn":       result = saveReturn(ss, data);       break;
+      case "markReturnUsed":   result = markReturnUsed(ss, data);   break;
+      case "ensureHeaders":        result = ensureAllHeaders(ss);              break;
+      case "generateAllSheets":    result = generateAllSheets(ss);             break;
+      case "saveHREntry":          result = saveHREntry(ss, data);             break;
+      case "deduplicateCustomers": result = runDeduplicateCustomers(ss);       break;
+      case "ping":             result = { status: "ok", message: "pong" }; break;
+      default:                 result = { status: "error", message: "Unknown action: " + data.action };
     }
     return makeResp(result);
   } catch (err) {
@@ -96,19 +99,19 @@ function findRow(sheet, colIndex, value) {
   return -1;
 }
 
+// Normalise bill numbers for matching (strip leading zeros)
 function normBill(b) {
   var n = String(b || "").trim().replace(/[^0-9]/g, "");
   return n.replace(/^0+/, "") || "0";
 }
 
-// ── GENERATE ALL SHEETS (now includes HR) ────────────────────────────────────
+// ── GENERATE ALL SHEETS (create + ensure all headers) ────────────────────────
 function generateAllSheets(ss) {
   var created = [];
   var fixed   = [];
   var sheetMap = {
     Items: SHEET_ITEMS, Categories: SHEET_CATEGORIES, Cashier: SHEET_CASHIER,
-    Sales: SHEET_SALES, StockLog: SHEET_STOCKLOG, Customer: SHEET_CUSTOMER,
-    Returns: SHEET_RETURNS, HR: SHEET_HR
+    Sales: SHEET_SALES, StockLog: SHEET_STOCKLOG, Customer: SHEET_CUSTOMER, Returns: SHEET_RETURNS, HR: SHEET_HR
   };
   Object.keys(sheetMap).forEach(function(key) {
     var tabName = sheetMap[key];
@@ -116,12 +119,14 @@ function generateAllSheets(ss) {
     if (!sh) {
       sh = ss.insertSheet(tabName);
       sh.getRange(1, 1, 1, HEADERS[key].length).setValues([HEADERS[key]]);
+      // Style header row
       sh.getRange(1, 1, 1, HEADERS[key].length)
         .setBackground("#0a2540")
         .setFontColor("#ffffff")
         .setFontWeight("bold");
       created.push(tabName);
     } else {
+      // Sheet exists — ensure all required headers
       var last     = sh.getLastColumn();
       var existing = last > 0 ? sh.getRange(1, 1, 1, last).getValues()[0].map(function(h) { return String(h).trim(); }) : [];
       var required = HEADERS[key] || [];
@@ -136,18 +141,19 @@ function generateAllSheets(ss) {
     }
   });
   return {
-    status: "ok", created: created, fixed: fixed,
+    status: "ok",
+    created: created,
+    fixed: fixed,
     message: "Created: [" + created.join(", ") + "] Fixed: [" + fixed.join(", ") + "]"
   };
 }
 
-// ── ENSURE ALL HEADERS (now includes HR) ─────────────────────────────────────
+// ── ENSURE ALL HEADERS ────────────────────────────────────────────────────────
 function ensureAllHeaders(ss) {
   var fixed = [];
   var sheetMap = {
     Items: SHEET_ITEMS, Categories: SHEET_CATEGORIES, Cashier: SHEET_CASHIER,
-    Sales: SHEET_SALES, StockLog: SHEET_STOCKLOG, Customer: SHEET_CUSTOMER,
-    Returns: SHEET_RETURNS, HR: SHEET_HR
+    Sales: SHEET_SALES, StockLog: SHEET_STOCKLOG, Customer: SHEET_CUSTOMER, Returns: SHEET_RETURNS, HR: SHEET_HR
   };
   Object.keys(sheetMap).forEach(function(key) {
     var tabName = sheetMap[key];
@@ -155,7 +161,6 @@ function ensureAllHeaders(ss) {
     if (!sh) {
       sh = ss.insertSheet(tabName);
       sh.getRange(1, 1, 1, HEADERS[key].length).setValues([HEADERS[key]]);
-      sh.getRange(1, 1, 1, HEADERS[key].length).setBackground("#0a2540").setFontColor("#ffffff").setFontWeight("bold");
       fixed.push("CREATED: " + tabName);
       return;
     }
@@ -166,7 +171,7 @@ function ensureAllHeaders(ss) {
     if (toAdd.length > 0) {
       toAdd.forEach(function(h) {
         var col = sh.getLastColumn() + 1;
-        sh.getRange(1, col).setValue(h).setBackground("#0a2540").setFontColor("#ffffff").setFontWeight("bold");
+        sh.getRange(1, col).setValue(h);
         fixed.push(tabName + "." + h);
       });
     }
@@ -174,45 +179,12 @@ function ensureAllHeaders(ss) {
   return { status: "ok", fixed: fixed, message: fixed.length > 0 ? "Fixed: " + fixed.join(", ") : "All headers OK" };
 }
 
-// ── SAVE HR ENTRY ─────────────────────────────────────────────────────────────
-function saveHREntry(ss, data) {
-  var sh = ss.getSheetByName(SHEET_HR);
-  if (!sh) {
-    // Auto-create the HR sheet if it doesn't exist
-    sh = ss.insertSheet(SHEET_HR);
-    sh.getRange(1, 1, 1, HEADERS.HR.length).setValues([HEADERS.HR]);
-    sh.getRange(1, 1, 1, HEADERS.HR.length)
-      .setBackground("#0a2540")
-      .setFontColor("#ffffff")
-      .setFontWeight("bold");
-  }
-  var type     = (data.type     || "").toLowerCase();
-  var amount   = parseFloat(data.amount) || 0;
-  var date     = data.date     || new Date().toISOString().slice(0, 10);
-  var name     = data.name     || type;
-  var category = data.category || "";
-  var note     = data.note     || "";
-  var id       = data.id       || (Date.now().toString(36));
-
-  sh.appendRow([id, type, name, category, amount, date, note]);
-
-  // Style row by type for easy reading in the sheet
-  var lastRow = sh.getLastRow();
-  var bgColor = type === "investment" ? "#e8f4fd"
-              : type === "return"     ? "#fff3e0"
-              : type === "expense"    ? "#fde8e8"
-              : type === "monthly"    ? "#f3e8ff"
-              : "#ffffff";
-  sh.getRange(lastRow, 1, 1, HEADERS.HR.length).setBackground(bgColor);
-
-  return { status: "ok", message: "HR entry saved: " + type + " · PKR " + amount };
-}
-
 // ── SAVE SALE ─────────────────────────────────────────────────────────────────
 function saveSale(ss, data) {
   var salesSh = ss.getSheetByName(SHEET_SALES);
   if (!salesSh) return { status: "error", message: "Sheet not found: " + SHEET_SALES };
 
+  // FBR is now 0
   salesSh.appendRow([
     data.BillNo || "", data.Date || "", data.Time || "", data.Cashier || "",
     parseFloat(data.GrandTotal) || 0, parseFloat(data.Discount) || 0, 0,
@@ -221,6 +193,7 @@ function saveSale(ss, data) {
     parseFloat(data.RefundApplied) || 0, data.RefundReturnNo || ""
   ]);
 
+  // Auto-add/update customer for Credit sales
   var custName = (data.CustomerName || "").trim();
   var custCell = (data.CustomerCell || "").trim();
   if (custName && custName !== "Unknown" && custCell && data.PaymentMethod === "Credit") {
@@ -237,9 +210,11 @@ function saveSale(ss, data) {
           if (billsIdx !== undefined) {
             var existingBills = String(custSh.getRange(custRowNum, billsIdx + 1).getValue() || "");
             var billsArr = existingBills.split(",").map(function(b) { return b.trim(); }).filter(Boolean);
+            // Deduplicate check
             var normNew = normBill(data.BillNo || "");
             var alreadyHas = billsArr.some(function(b) { return normBill(b) === normNew; });
             if (!alreadyHas && data.BillNo) {
+              // Deduplicate existing before adding
               var seen = {};
               var unique = billsArr.filter(function(b) { var n = normBill(b); if (seen[n]) return false; seen[n] = true; return true; });
               unique.push(String(data.BillNo));
@@ -251,6 +226,7 @@ function saveSale(ss, data) {
     }
   }
 
+  // Deduct stock
   var itemsSh    = ss.getSheetByName(SHEET_ITEMS);
   var stockLogSh = ss.getSheetByName(SHEET_STOCKLOG);
   if (itemsSh && data.items && data.items.length > 0) {
@@ -279,15 +255,20 @@ function saveSale(ss, data) {
       stockLogSh.getRange(nextRow, 1, logRows.length, 6).setValues(logRows);
     }
   }
+  // Deduplicate Customer sheet after every sale — removes duplicate CellNo rows
   deduplicateCustomerSheet(ss);
+
   return { status: "ok", message: "Sale saved: Bill #" + data.BillNo };
 }
 
+// ── MANUAL DEDUPLICATE TRIGGER ────────────────────────────────────────────────
 function runDeduplicateCustomers(ss) {
   deduplicateCustomerSheet(ss);
   return { status: "ok", message: "Customer sheet deduplicated successfully" };
 }
 
+// ── DEDUPLICATE CUSTOMER SHEET ────────────────────────────────────────────────
+// Removes duplicate rows with same CellNo, merging their BillNos
 function deduplicateCustomerSheet(ss) {
   var sh = ss.getSheetByName(SHEET_CUSTOMER);
   if (!sh) return;
@@ -295,38 +276,58 @@ function deduplicateCustomerSheet(ss) {
   if (last < 2) return;
   var hdrMap  = getHeaders(sh);
   var cellIdx = hdrMap["CellNo"];
+  var nameIdx = hdrMap["Name"];
   var billIdx = hdrMap["BillNo"];
+  var payIdx  = hdrMap["Payments"];
+  var openIdx = hdrMap["OpeningDebit"];
   if (cellIdx === undefined) return;
+
   var data     = sh.getRange(2, 1, last - 1, sh.getLastColumn()).getValues();
-  var seen     = {};
-  var toDelete = [];
+  var seen     = {};   // CellNo → first row index in data array
+  var toDelete = [];   // data row indices to delete (0-based in data array)
+
   data.forEach(function(row, i) {
     var cell = String(row[cellIdx] || "").trim();
     if (!cell) return;
-    if (!seen.hasOwnProperty(cell)) { seen[cell] = i; }
-    else {
+    if (!seen.hasOwnProperty(cell)) {
+      seen[cell] = i;
+    } else {
+      // Merge this duplicate row's BillNo into the first row
       var firstIdx = seen[cell];
       if (billIdx !== undefined) {
         var existing = String(data[firstIdx][billIdx] || "");
         var extra    = String(row[billIdx] || "");
         var allBills = existing.split(",").concat(extra.split(",")).map(function(b) { return b.trim(); }).filter(Boolean);
         var seenN = {};
-        var merged = allBills.filter(function(b) { var n = b.replace(/[^0-9]/g,"").replace(/^0+/,"") || "0"; if (seenN[n]) return false; seenN[n] = true; return true; });
+        var merged = allBills.filter(function(b) {
+          var n = b.replace(/[^0-9]/g, "").replace(/^0+/, "") || "0";
+          if (seenN[n]) return false;
+          seenN[n] = true; return true;
+        });
         data[firstIdx][billIdx] = merged.join(",");
       }
       toDelete.push(i);
     }
   });
+
   if (toDelete.length === 0) return;
+
+  // Write back merged first rows, then delete duplicates bottom-up
+  // First update the merged rows
   if (billIdx !== undefined) {
     Object.keys(seen).forEach(function(cell) {
       var i = seen[cell];
       sh.getRange(i + 2, billIdx + 1).setValue(data[i][billIdx]);
     });
   }
-  toDelete.reverse().forEach(function(i) { sh.deleteRow(i + 2); });
+
+  // Delete duplicate rows bottom-up to preserve row indices
+  toDelete.reverse().forEach(function(i) {
+    sh.deleteRow(i + 2);
+  });
 }
 
+// ── SAVE RETURN ───────────────────────────────────────────────────────────────
 function saveReturn(ss, data) {
   var retSh = ss.getSheetByName(SHEET_RETURNS);
   if (!retSh) return { status: "error", message: "Returns sheet not found" };
@@ -334,6 +335,8 @@ function saveReturn(ss, data) {
     data.ReturnNo || "", data.OrigBillNo || "", data.Date || "", data.Time || "",
     data.Cashier || "", data.Items || "[]", parseFloat(data.RefundAmount) || 0, data.Reason || "", "0"
   ]);
+
+  // Restore stock
   var itemsSh    = ss.getSheetByName(SHEET_ITEMS);
   var stockLogSh = ss.getSheetByName(SHEET_STOCKLOG);
   var returnedItems = [];
@@ -366,6 +369,7 @@ function saveReturn(ss, data) {
   return { status: "ok", message: "Return saved: " + data.ReturnNo };
 }
 
+// ── MARK RETURN USED ──────────────────────────────────────────────────────────
 function markReturnUsed(ss, data) {
   var sh = ss.getSheetByName(SHEET_RETURNS);
   if (!sh) return { status: "error", message: "Returns sheet not found" };
@@ -384,6 +388,7 @@ function markReturnUsed(ss, data) {
   return { status: "ok", message: "Marked used: " + data.ReturnNo };
 }
 
+// ── SAVE CUSTOMER ─────────────────────────────────────────────────────────────
 function saveCustomer(ss, data) {
   var sh = ss.getSheetByName(SHEET_CUSTOMER);
   if (!sh) return { status: "error", message: "Sheet not found: " + SHEET_CUSTOMER };
@@ -400,26 +405,59 @@ function saveCustomer(ss, data) {
     sh.appendRow([name, cell, billNo, "", opening]);
     return { status: "ok", message: "Customer created: " + name };
   }
+  // Update name
   var nameIdx = hdrMap["Name"];
   if (nameIdx !== undefined) sh.getRange(rowNum, nameIdx + 1).setValue(name);
+  // Update opening debit — only write if provided AND either: cell is empty, or new value > 0
   var openIdx = hdrMap["OpeningDebit"];
-  if (openIdx !== undefined && opening > 0) sh.getRange(rowNum, openIdx + 1).setValue(opening);
+  if (openIdx !== undefined) {
+    var existingDebit = sh.getRange(rowNum, openIdx + 1).getValue();
+    var existingDebitVal = parseFloat(existingDebit) || 0;
+    // Only overwrite if: new value is explicitly > 0, OR cell is currently empty/zero
+    if (opening > 0) {
+      sh.getRange(rowNum, openIdx + 1).setValue(opening);
+    } else if (existingDebitVal === 0 && opening === 0) {
+      // Both zero — no-op, leave as is
+    }
+    // If existing > 0 and new value = 0 → do NOT overwrite (preserve existing)
+  }
+  // Append bill if new — deduplicate using normBill logic
   var billsIdx = hdrMap["BillNo"];
   if (billsIdx !== undefined && billNo) {
     var existing = String(sh.getRange(rowNum, billsIdx + 1).getValue() || "");
     var bills    = existing.split(",").map(function(b) { return b.trim(); }).filter(Boolean);
-    var normNew  = normBill(billNo);
+    // Deduplicate: strip leading zeros for comparison
+    var normNew = normBill(billNo);
     var alreadyHas = bills.some(function(b) { return normBill(b) === normNew; });
     if (!alreadyHas) {
+      // Also deduplicate existing bills before saving
       var seen = {};
-      var uniqueBills = bills.filter(function(b) { var n = normBill(b); if (seen[n]) return false; seen[n] = true; return true; });
+      var uniqueBills = bills.filter(function(b) {
+        var n = normBill(b);
+        if (seen[n]) return false;
+        seen[n] = true;
+        return true;
+      });
       uniqueBills.push(billNo);
       sh.getRange(rowNum, billsIdx + 1).setValue(uniqueBills.join(","));
+    } else {
+      // Still deduplicate existing even if this bill already present
+      var seenD = {};
+      var dedupBills = bills.filter(function(b) {
+        var n = normBill(b);
+        if (seenD[n]) return false;
+        seenD[n] = true;
+        return true;
+      });
+      if (dedupBills.length !== bills.length) {
+        sh.getRange(rowNum, billsIdx + 1).setValue(dedupBills.join(","));
+      }
     }
   }
   return { status: "ok", message: "Customer updated: " + name };
 }
 
+// ── DELETE CUSTOMER ───────────────────────────────────────────────────────────
 function deleteCustomer(ss, data) {
   var sh = ss.getSheetByName(SHEET_CUSTOMER);
   if (!sh) return { status: "error", message: "Sheet not found: " + SHEET_CUSTOMER };
@@ -434,6 +472,7 @@ function deleteCustomer(ss, data) {
   return { status: "ok", message: "Customer deleted: " + cell };
 }
 
+// ── SYNC PAYMENTS (full replace — used for delete and receive payment) ────────
 function syncPayments(ss, data) {
   var sh = ss.getSheetByName(SHEET_CUSTOMER);
   if (!sh) return { status: "error", message: "Sheet not found: " + SHEET_CUSTOMER };
@@ -445,11 +484,17 @@ function syncPayments(ss, data) {
   var rowNum = findRow(sh, cellIdx, cell);
   if (rowNum === -1) return { status: "error", message: "Customer not found: " + cell };
   var payIdx = hdrMap["Payments"];
-  if (payIdx === undefined) { var col = sh.getLastColumn() + 1; sh.getRange(1, col).setValue("Payments"); payIdx = col - 1; }
+  if (payIdx === undefined) {
+    var col = sh.getLastColumn() + 1;
+    sh.getRange(1, col).setValue("Payments");
+    payIdx = col - 1;
+  }
+  // Replace entire payments cell with the provided JSON
   sh.getRange(rowNum, payIdx + 1).setValue(data.payments || "[]");
   return { status: "ok", message: "Payments synced for: " + cell };
 }
 
+// ── SAVE PAYMENT (append single payment) ─────────────────────────────────────
 function savePayment(ss, data) {
   var sh = ss.getSheetByName(SHEET_CUSTOMER);
   if (!sh) return { status: "error", message: "Sheet not found: " + SHEET_CUSTOMER };
@@ -461,7 +506,11 @@ function savePayment(ss, data) {
   var rowNum = findRow(sh, cellIdx, cell);
   if (rowNum === -1) return { status: "error", message: "Customer not found: " + cell };
   var payIdx = hdrMap["Payments"];
-  if (payIdx === undefined) { var col2 = sh.getLastColumn() + 1; sh.getRange(1, col2).setValue("Payments"); payIdx = col2 - 1; }
+  if (payIdx === undefined) {
+    var col = sh.getLastColumn() + 1;
+    sh.getRange(1, col).setValue("Payments");
+    payIdx = col - 1;
+  }
   var existing = String(sh.getRange(rowNum, payIdx + 1).getValue() || "");
   var payments = [];
   try { if (existing.trim()) payments = JSON.parse(existing); } catch (e) { payments = []; }
@@ -471,6 +520,7 @@ function savePayment(ss, data) {
   return { status: "ok", message: "Payment saved for: " + cell };
 }
 
+// ── ADJUST STOCK ──────────────────────────────────────────────────────────────
 function adjustStock(ss, data) {
   var itemsSh    = ss.getSheetByName(SHEET_ITEMS);
   var stockLogSh = ss.getSheetByName(SHEET_STOCKLOG);
@@ -493,15 +543,24 @@ function adjustStock(ss, data) {
   return { status: "ok", before: before, after: after };
 }
 
+// ── ITEM CRUD ─────────────────────────────────────────────────────────────────
 function addItem(ss, data) {
   var sh = ss.getSheetByName(SHEET_ITEMS);
   if (!sh) return { status: "error", message: "Items sheet not found" };
   var hdrMap = getHeaders(sh);
   if (hdrMap["Barcode"] !== undefined && findRow(sh, hdrMap["Barcode"], data.Barcode) !== -1)
     return { status: "error", message: "Barcode already exists" };
-  sh.appendRow([data.Barcode || "", data.Category || "", data.Company || "", data.ItemName || "",
+  var vuEnabled = data.variable_unit_enabled === true || data.variable_unit_enabled === "true" ? "TRUE" : "FALSE";
+  sh.appendRow([
+    data.Barcode || "", data.Category || "", data.Company || "", data.ItemName || "",
     parseFloat(data.Price) || 0, parseFloat(data.CostPrice) || 0, parseFloat(data.Discount) || 0,
-    parseInt(data.Stock) || 0, data.ExpiryDate || ""]);
+    parseInt(data.Stock) || 0, data.ExpiryDate || "",
+    vuEnabled,
+    parseFloat(data.piece_sale_price)  || 0, parseFloat(data.piece_cost_price)   || 0,
+    parseInt(data.pieces_per_box)      || 0, parseInt(data.boxes_per_cotton)      || 0,
+    parseFloat(data.box_sale_price)    || 0, parseFloat(data.box_cost_price)      || 0,
+    parseFloat(data.cotton_sale_price) || 0, parseFloat(data.cotton_cost_price)   || 0,
+  ]);
   return { status: "ok" };
 }
 
@@ -512,15 +571,45 @@ function editItem(ss, data) {
   if (hdrMap["Barcode"] === undefined) return { status: "error", message: "No Barcode column" };
   var rowNum = findRow(sh, hdrMap["Barcode"], data.Barcode);
   if (rowNum === -1) return { status: "error", message: "Barcode not found" };
+  var vuEnabled = data.variable_unit_enabled === true || data.variable_unit_enabled === "true" ? "TRUE" : "FALSE";
   var updates = {
-    "Category": data.Category, "Company": data.Company || "", "ItemName": data.ItemName,
-    "Price": parseFloat(data.Price) || 0, "CostPrice": parseFloat(data.CostPrice) || 0,
-    "Discount": parseFloat(data.Discount) || 0, "Stock": parseInt(data.Stock) || 0, "ExpiryDate": data.ExpiryDate || ""
+    "Category":             data.Category,
+    "Company":              data.Company || "",
+    "ItemName":             data.ItemName,
+    "Price":                parseFloat(data.Price) || 0,
+    "CostPrice":            parseFloat(data.CostPrice) || 0,
+    "Discount":             parseFloat(data.Discount) || 0,
+    "Stock":                parseInt(data.Stock) || 0,
+    "ExpiryDate":           data.ExpiryDate || "",
+    "variable_unit_enabled": vuEnabled,
+    "piece_sale_price":     parseFloat(data.piece_sale_price)  || 0,
+    "piece_cost_price":     parseFloat(data.piece_cost_price)  || 0,
+    "pieces_per_box":       parseInt(data.pieces_per_box)      || 0,
+    "boxes_per_cotton":     parseInt(data.boxes_per_cotton)    || 0,
+    "box_sale_price":       parseFloat(data.box_sale_price)    || 0,
+    "box_cost_price":       parseFloat(data.box_cost_price)    || 0,
+    "cotton_sale_price":    parseFloat(data.cotton_sale_price) || 0,
+    "cotton_cost_price":    parseFloat(data.cotton_cost_price) || 0,
   };
   Object.keys(updates).forEach(function(col) {
     if (hdrMap[col] !== undefined) sh.getRange(rowNum, hdrMap[col] + 1).setValue(updates[col]);
   });
   return { status: "ok" };
+}
+
+function saveHREntry(ss, data) {
+  var sh = ss.getSheetByName(SHEET_HR);
+  if (!sh) {
+    sh = ss.insertSheet(SHEET_HR);
+    sh.getRange(1, 1, 1, HEADERS.HR.length).setValues([HEADERS.HR]);
+    sh.getRange(1, 1, 1, HEADERS.HR.length).setBackground("#0a2540").setFontColor("#ffffff").setFontWeight("bold");
+  }
+  var type   = (data.type || "").toLowerCase();
+  var amount = parseFloat(data.amount) || 0;
+  var bgColor = type === "investment" ? "#e8f4fd" : type === "return" ? "#fff3e0" : type === "expense" ? "#fde8e8" : type === "monthly" ? "#f3e8ff" : "#ffffff";
+  sh.appendRow([data.id || Date.now().toString(36), type, data.name || type, data.category || "", amount, data.date || new Date().toISOString().slice(0,10), data.note || ""]);
+  sh.getRange(sh.getLastRow(), 1, 1, HEADERS.HR.length).setBackground(bgColor);
+  return { status: "ok", message: "HR entry saved: " + type + " PKR " + amount };
 }
 
 function deleteItem(ss, data) {
@@ -534,6 +623,7 @@ function deleteItem(ss, data) {
   return { status: "ok" };
 }
 
+// ── CATEGORY CRUD ─────────────────────────────────────────────────────────────
 function addCategory(ss, data) {
   var sh   = ss.getSheetByName(SHEET_CATEGORIES);
   if (!sh) return { status: "error", message: "Categories sheet not found" };
@@ -556,6 +646,7 @@ function deleteCategory(ss, data) {
   return { status: "error", message: "Category not found" };
 }
 
+// ── CASHIER CRUD ──────────────────────────────────────────────────────────────
 function addCashier(ss, data) {
   var sh = ss.getSheetByName(SHEET_CASHIER);
   if (!sh) return { status: "error", message: "Cashier sheet not found" };
@@ -594,8 +685,10 @@ function deleteCashier(ss, data) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// DAILY BACKUP
+// DAILY BACKUP SCRIPT
+// Run createDailyBackupTrigger() ONCE to activate (runs daily at 2 AM PKT)
 // ══════════════════════════════════════════════════════════════════════════════
+
 var SPREADSHEET_ID   = "11xFHs6zVh4ZgNTwtRveTg1Q401pxiCWv8tyOuFfhoiA";
 var BACKUP_FOLDER_ID = "1hcszl75hKW7i2YW2vjPD3JUtUbm9s4Rm";
 var BACKUP_PREFIX    = "POS_Backup";
@@ -611,15 +704,22 @@ function dailyBackup() {
     console.log("✅ Backup created: " + backupName);
     deleteOldBackups(folder);
     logBackup(ss, backupName, "SUCCESS");
-  } catch (e) { console.error("❌ Backup failed: " + e.toString()); }
+  } catch (e) {
+    console.error("❌ Backup failed: " + e.toString());
+  }
 }
 
 function deleteOldBackups(folder) {
-  var cutoff   = new Date(); cutoff.setDate(cutoff.getDate() - KEEP_DAYS);
-  var allFiles = folder.getFiles(); var deleted = 0;
+  var cutoff   = new Date();
+  cutoff.setDate(cutoff.getDate() - KEEP_DAYS);
+  var allFiles = folder.getFiles();
+  var deleted  = 0;
   while (allFiles.hasNext()) {
     var file = allFiles.next();
-    if (file.getName().startsWith(BACKUP_PREFIX) && file.getDateCreated() < cutoff) { file.setTrashed(true); deleted++; }
+    if (file.getName().startsWith(BACKUP_PREFIX) && file.getDateCreated() < cutoff) {
+      file.setTrashed(true);
+      deleted++;
+    }
   }
   if (deleted > 0) console.log("Cleaned up " + deleted + " old backup(s)");
 }
@@ -643,9 +743,12 @@ function createDailyBackupTrigger() {
     if (t.getHandlerFunction() === "dailyBackup") ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger("dailyBackup").timeBased().everyDays(1).atHour(2).create();
-  console.log("✅ Daily backup trigger created.");
+  console.log("✅ Daily backup trigger created — runs every day at 2 AM.");
 }
 
-function manualBackup() { dailyBackup(); console.log("✅ Manual backup completed."); }
+function manualBackup() {
+  dailyBackup();
+  console.log("✅ Manual backup completed.");
+}
 `;
 }
