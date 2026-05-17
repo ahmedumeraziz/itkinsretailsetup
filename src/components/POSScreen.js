@@ -7,8 +7,65 @@ import Calculator from "./Calculator";
 import ReturnModal, { RefundApplyPanel } from "./ReturnModal";
 import CashierCustomerLedger from "./CashierCustomerLedger";
 
+// ── Variable Unit helpers ─────────────────────────────────────────────────────
+export function vuEnabled(item) {
+  return !!(item.variable_unit_enabled &&
+    parseInt(item.pieces_per_box) > 0 &&
+    parseInt(item.boxes_per_cotton) > 0);
+}
+
+export function resolveToUnits(totalPieces, ppb, bpc) {
+  const ppc      = ppb * bpc;
+  const cottons  = Math.floor(totalPieces / ppc);
+  const rem1     = totalPieces % ppc;
+  const boxes    = Math.floor(rem1 / ppb);
+  const pieces   = rem1 % ppb;
+  return { cottons, boxes, pieces };
+}
+
+export function unitsToTotal(cottons, boxes, pieces, ppb, bpc) {
+  return (cottons * ppb * bpc) + (boxes * ppb) + pieces;
+}
+
 function emptyBill(id) {
   return { id, cart:[], payments:[{type:"cash",amount:"",last4:""}], saved:false, lastBill:null, billDiscPct:0, customerName:"", customerCell:"", cashReceived:"" };
+}
+
+// ── Variable Qty Row ─────────────────────────────────────────────────────────
+function VUQtyRow({ item, onChangeTotal }) {
+  const ppb = parseInt(item.pieces_per_box)   || 1;
+  const bpc = parseInt(item.boxes_per_cotton) || 1;
+  const total = item.qty || 0;
+  const { cottons, boxes, pieces } = resolveToUnits(total, ppb, bpc);
+
+  const update = (field, val) => {
+    const v = Math.max(0, parseInt(val) || 0);
+    let c = cottons, b = boxes, p = pieces;
+    if (field === "cottons") c = v;
+    if (field === "boxes")   b = v;
+    if (field === "pieces")  p = v;
+    onChangeTotal(unitsToTotal(c, b, p, ppb, bpc));
+  };
+
+  const numInput = (label, field, value, color) => (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+      <span style={{ fontSize: 9, color, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase" }}>{label}</span>
+      <input type="number" min="0" value={value}
+        onChange={e => update(field, e.target.value)}
+        style={{ width: 48, padding: "4px 4px", background: T.bgCard, border: `1px solid ${color}`, borderRadius: 5, color: T.textPrimary, fontSize: 13, fontWeight: 700, textAlign: "center", outline: "none" }}
+        onFocus={e => e.target.select()} />
+    </div>
+  );
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      {numInput("Cotton", "cottons", cottons, "#7c3aed")}
+      <span style={{ color: T.textMuted, fontSize: 11, marginTop: 12 }}>+</span>
+      {numInput("Box",    "boxes",   boxes,   T.accent)}
+      <span style={{ color: T.textMuted, fontSize: 11, marginTop: 12 }}>+</span>
+      {numInput("Piece",  "pieces",  pieces,  T.posOrange)}
+    </div>
+  );
 }
 
 export default function POSScreen({ user, items, categories, billCounter, onLogout, onSaleSaved, sheetStatus, isOnline, lastSync, onRefresh, searchIndex, itemMap, sales, returns, returnCounter, onReturnSaved, onMarkReturnUsed, customers, setCustomers }) {
@@ -41,7 +98,6 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
     if (q.length<1) { setResults([]); return; }
     const timer = setTimeout(() => {
       if (searchIndex.size>0) {
-        const normB = b=>{const n=String(b||"").replace(/[^0-9]/g,"");return n.replace(/^0+/,"")||"0";};
         const qL=q.toLowerCase();
         if(itemMap.has(q)){setResults([itemMap.get(q)]);return;}
         const tokens=qL.split(/\s+/);let resultSet=null;
@@ -60,14 +116,21 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
   const upd = fn=>setBills(prev=>prev.map(b=>b.id===activeBillId?fn(b):b));
   const addNewBill=()=>{const id=nextBillId;setBills(p=>[...p,emptyBill(id)]);setActiveBillId(id);setNextBillId(id+1);setSearch("");setResults([]);setTimeout(()=>searchRef.current?.focus(),60);};
   const closeBill=(id,e)=>{e.stopPropagation();if(bills.length===1){setBills([emptyBill(id)]);return;}const rem=bills.filter(b=>b.id!==id);setBills(rem);if(activeBillId===id)setActiveBillId(rem[rem.length-1].id);};
-
   const focusSearch=useCallback(()=>{setFocusedQtyBarcode(null);setTimeout(()=>{if(searchRef.current){searchRef.current.focus();searchRef.current.select();}},60);},[]);
 
-  const addItem=useCallback(item=>{
-    upd(b=>{const ex=b.cart.find(i=>i.Barcode===item.Barcode);return{...b,cart:ex?b.cart.map(i=>i.Barcode===item.Barcode?{...i,qty:i.qty+1}:i):[...b.cart,{...item,qty:1}]};});
-    setSearch("");setResults([]);setKbIndex(-1);setFocusedQtyBarcode(null);
-    setTimeout(()=>setFocusedQtyBarcode(item.Barcode),50);
-  },[]);
+  const addItem = useCallback(item => {
+    const isVU = vuEnabled(item);
+    upd(b => {
+      const ex = b.cart.find(i => i.Barcode === item.Barcode);
+      if (ex) {
+        return { ...b, cart: b.cart.map(i => i.Barcode === item.Barcode ? { ...i, qty: i.qty + 1 } : i) };
+      }
+      // For VU items start with 1 piece
+      return { ...b, cart: [...b.cart, { ...item, qty: 1 }] };
+    });
+    setSearch(""); setResults([]); setKbIndex(-1); setFocusedQtyBarcode(null);
+    if (!isVU) setTimeout(() => setFocusedQtyBarcode(item.Barcode), 50);
+  }, []);
 
   const handleSearchChange=useCallback(e=>{const now=Date.now();lastKeyTime.current=now;setSearch(e.target.value);},[]);
   const handleSearchKeyDown=useCallback(e=>{
@@ -96,40 +159,64 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
   const cart         = ab.cart;
   const payments     = ab.payments;
   const billDiscPct  = ab.billDiscPct||0;
-  const subTotal     = cart.reduce((s,i)=>s+parseFloat(i.Price||0)*i.qty,0);
-  const itemDiscount = cart.reduce((s,i)=>s+parseFloat(i.Discount||0)*i.qty,0);
-  const afterItems   = subTotal-itemDiscount;
+
+  // ── Cart totals — use qty_total_pcs * piece price for VU items ──
+  const subTotal     = cart.reduce((s,i) => {
+    const price = parseFloat(i.piece_sale_price || i.Price || 0);
+    const qty   = vuEnabled(i) ? (i.qty || 0) : (i.qty || 0);
+    return s + price * qty;
+  }, 0);
+  const itemDiscount = cart.reduce((s,i) => s + parseFloat(i.Discount||0)*i.qty, 0);
+  const afterItems   = subTotal - itemDiscount;
   const billDiscount = parseFloat(((afterItems*billDiscPct)/100).toFixed(2));
   const refundApplied= payments.filter(p=>p.type==="refund").reduce((s,p)=>s+parseFloat(p.amount||0),0);
-  const grandTotal   = afterItems-billDiscount;
-  const netTotal     = Math.max(0,grandTotal-refundApplied);
+  const grandTotal   = afterItems - billDiscount;
+  const netTotal     = Math.max(0, grandTotal - refundApplied);
   const totalReceived= payments.filter(p=>p.type!=="refund").reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
-  const change       = totalReceived-netTotal;
+  const change       = totalReceived - netTotal;
 
-  const saveBill=()=>{
-    if(cart.length===0)return;
-    const {date,time}=getNow();
-    const billNo="B"+String(localCounter).padStart(4,"0");
-    const totalDiscount=itemDiscount+billDiscount;
-    const customerInfo={Name:ab.customerName?.trim()||"Unknown",CellNo:ab.customerCell?.trim()||""};
-    const isKnownCustomer=customerInfo.Name&&customerInfo.Name!=="Unknown"&&customerInfo.Name.trim()!==""&&customerInfo.CellNo&&customerInfo.CellNo.trim()!=="";
-    const payMethod=isKnownCustomer?"Credit":"Cash";
+  const saveBill = () => {
+    if(cart.length===0) return;
+    const {date,time} = getNow();
+    const billNo      = "B"+String(localCounter).padStart(4,"0");
+    const totalDiscount = itemDiscount + billDiscount;
+    const customerInfo  = { Name: ab.customerName?.trim()||"Unknown", CellNo: ab.customerCell?.trim()||"" };
+    const isKnownCustomer = customerInfo.Name && customerInfo.Name!=="Unknown" && customerInfo.Name.trim()!=="" && customerInfo.CellNo && customerInfo.CellNo.trim()!=="";
+    const payMethod   = isKnownCustomer ? "Credit" : "Cash";
 
-    const normB=b=>{const n=String(b||"").replace(/[^0-9]/g,"");return n.replace(/^0+/,"")||"0";};
-    const existingCustomer=isKnownCustomer?customers.find(c=>c.CellNo===customerInfo.CellNo):null;
-    const prevPending=existingCustomer?(()=>{
-      const billNos=(existingCustomer.BillNo||"").split(",").filter(Boolean).map(b=>b.trim());
-      const totalCredit=billNos.reduce((s,bn)=>{const sale=sales.find(sale=>normB(sale.BillNo)===normB(bn));if(!sale||sale.PaymentMethod!=="Credit")return s;return s+parseFloat(sale.GrandTotal||0);},0);
-      const openingDebit=parseFloat(existingCustomer.openingDebit||0);
-      const totalPaid=(existingCustomer.payments||[]).reduce((s,p)=>s+parseFloat(p.amount||0),0);
+    const normB = b => { const n=String(b||"").replace(/[^0-9]/g,""); return n.replace(/^0+/,"")||"0"; };
+    const existingCustomer = isKnownCustomer ? customers.find(c=>c.CellNo===customerInfo.CellNo) : null;
+    const prevPending = existingCustomer ? (()=>{
+      const billNos = (existingCustomer.BillNo||"").split(",").filter(Boolean).map(b=>b.trim());
+      const totalCredit = billNos.reduce((s,bn)=>{const sale=sales.find(s2=>normB(s2.BillNo)===normB(bn));if(!sale||sale.PaymentMethod!=="Credit")return s;return s+parseFloat(sale.GrandTotal||0);},0);
+      const openingDebit = parseFloat(existingCustomer.openingDebit||0);
+      const totalPaid = (existingCustomer.payments||[]).reduce((s,p)=>s+parseFloat(p.amount||0),0);
       return Math.max(0,totalCredit+openingDebit-totalPaid);
-    })():0;
+    })() : 0;
 
-    const refundPayment=payments.find(p=>p.type==="refund");
-    const refundReturnNo=refundPayment?.origReturnNo||"";
-    const bill={billNo,date,time,cashier:user.Name,items:cart,subTotal,totalDiscount,itemDiscount,billDiscount,billDiscountPct:billDiscPct,grandTotal:netTotal,payments,change:Math.max(0,parseFloat(ab.cashReceived||0)-netTotal),customerName:customerInfo.Name,customerCell:customerInfo.CellNo,refundApplied,refundReturnNo,prevPending};
+    const refundPayment = payments.find(p=>p.type==="refund");
+    const refundReturnNo = refundPayment?.origReturnNo||"";
 
-    onSaleSaved({BillNo:billNo,Date:date,Time:time,Cashier:user.Name,GrandTotal:netTotal,Discount:totalDiscount,FBR:0,PaymentMethod:payMethod,ItemsDetail:JSON.stringify(cart),items:cart,CustomerName:isKnownCustomer?customerInfo.Name:"Unknown",CustomerCell:isKnownCustomer?customerInfo.CellNo:"",RefundApplied:refundApplied,RefundReturnNo:refundReturnNo},isKnownCustomer?customerInfo:{Name:"Unknown",CellNo:""});
+    // Enrich cart items with VU snapshot data
+    const enrichedCart = cart.map(item => {
+      if (!vuEnabled(item)) return item;
+      const ppb = parseInt(item.pieces_per_box) || 1;
+      const bpc = parseInt(item.boxes_per_cotton) || 1;
+      const { cottons, boxes, pieces } = resolveToUnits(item.qty, ppb, bpc);
+      return {
+        ...item,
+        qty_cottons:   cottons,
+        qty_boxes:     boxes,
+        qty_pieces:    pieces,
+        qty_total_pcs: item.qty,
+        unit_price_pcs: parseFloat(item.piece_sale_price || item.Price || 0),
+        line_total:    parseFloat(item.piece_sale_price || item.Price || 0) * item.qty,
+      };
+    });
+
+    const bill = { billNo, date, time, cashier: user.Name, items: enrichedCart, subTotal, totalDiscount, itemDiscount, billDiscount, billDiscountPct: billDiscPct, grandTotal: netTotal, payments, change: Math.max(0, parseFloat(ab.cashReceived||0)-netTotal), customerName: customerInfo.Name, customerCell: customerInfo.CellNo, refundApplied, refundReturnNo, prevPending };
+
+    onSaleSaved({ BillNo:billNo, Date:date, Time:time, Cashier:user.Name, GrandTotal:netTotal, Discount:totalDiscount, FBR:0, PaymentMethod:payMethod, ItemsDetail:JSON.stringify(enrichedCart), items:enrichedCart, CustomerName:isKnownCustomer?customerInfo.Name:"Unknown", CustomerCell:isKnownCustomer?customerInfo.CellNo:"", RefundApplied:refundApplied, RefundReturnNo:refundReturnNo }, isKnownCustomer?customerInfo:{Name:"Unknown",CellNo:""});
 
     setLocalCounter(c=>c+1);
     upd(b=>({...b,saved:true,lastBill:bill}));
@@ -141,9 +228,8 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
   const grouped={}; cart.forEach(item=>{const c=item.Category||"General";if(!grouped[c])grouped[c]=[];grouped[c].push(item);});
   const catKeys=Object.keys(grouped).sort();
 
-  // ── Light Theme Styles ──
-  const topBarStyle={background:T.bgTopBar,borderBottom:"none",padding:"8px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0,gap:8,boxShadow:"0 2px 8px rgba(0,0,0,0.15)"};
-  const tabStyle=(active)=>({display:"flex",alignItems:"center",gap:5,padding:"6px 14px 7px",cursor:"pointer",borderRadius:"8px 8px 0 0",flexShrink:0,background:active?"#fff":"rgba(255,255,255,0.12)",border:active?`1px solid ${T.border}`:"1px solid transparent",borderBottom:active?"1px solid #fff":"1px solid transparent",marginBottom:active?-1:0,color:active?T.accent:"rgba(255,255,255,0.8)",fontSize:12,fontWeight:active?700:400});
+  const topBarStyle = { background:T.bgTopBar, borderBottom:"none", padding:"8px 14px", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0, gap:8, boxShadow:"0 2px 8px rgba(0,0,0,0.15)" };
+  const tabStyle    = (active) => ({ display:"flex", alignItems:"center", gap:5, padding:"6px 14px 7px", cursor:"pointer", borderRadius:"8px 8px 0 0", flexShrink:0, background:active?"#fff":"rgba(255,255,255,0.12)", border:active?`1px solid ${T.border}`:"1px solid transparent", borderBottom:active?"1px solid #fff":"1px solid transparent", marginBottom:active?-1:0, color:active?T.accent:"rgba(255,255,255,0.8)", fontSize:12, fontWeight:active?700:400 });
 
   return (
     <div style={{height:"100vh",display:"flex",flexDirection:"column",background:T.bgPage,overflow:"hidden"}}>
@@ -170,7 +256,7 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
       <div style={{display:"flex",alignItems:"center",background:T.bgTopBar,padding:"6px 12px 0",gap:4,overflowX:"auto",borderBottom:`1px solid ${T.border}`}}>
         {bills.map(b=>{
           const isA=b.id===activeBillId;
-          const bT=b.cart.reduce((s,i)=>s+parseFloat(i.Price||0)*i.qty-parseFloat(i.Discount||0)*i.qty,0);
+          const bT=b.cart.reduce((s,i)=>s+parseFloat(i.piece_sale_price||i.Price||0)*i.qty-parseFloat(i.Discount||0)*i.qty,0);
           return(
             <div key={b.id} onClick={()=>{setActiveBillId(b.id);setTimeout(()=>searchRef.current?.focus(),40);}} style={tabStyle(isA)}>
               <span>Bill {b.id}
@@ -196,15 +282,16 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
             {results.length>0&&(
               <div ref={dropdownRef} style={{position:"absolute",top:"100%",left:0,right:0,background:T.bgCard,border:`1px solid ${T.border}`,borderRadius:9,zIndex:200,boxShadow:T.shadowLg,maxHeight:340,overflowY:"auto"}}>
                 <div style={{padding:"4px 13px",background:T.accentLight,borderBottom:`1px solid ${T.accentBorder}`,color:T.accent,fontSize:9,letterSpacing:1}}>↑↓ NAVIGATE · ENTER SELECT → QTY · ESC CLOSE</div>
-                {results.map((item,i)=>{const stk=Number(item.Stock)||0;const isKb=i===kbIndex;return(
+                {results.map((item,i)=>{const stk=Number(item.Stock)||0;const isKb=i===kbIndex;const isVU=vuEnabled(item);return(
                   <div key={i} className={`search-item-row${isKb?" kb-selected":""}`} onClick={()=>addItem(item)}
                     style={{padding:"9px 13px",cursor:"pointer",borderBottom:`1px solid ${T.borderLight}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:isKb?T.accentLight:"transparent",borderLeft:isKb?`3px solid ${T.accent}`:"3px solid transparent",transition:"background 0.1s"}}>
                     <div>
-                      <div style={{color:T.textPrimary,fontSize:13,fontWeight:600}}>{item.ItemName}</div>
-                      <div style={{color:T.textMuted,fontSize:10}}>{item.Barcode} · {item.Category}</div>
+                      <div style={{color:T.textPrimary,fontSize:13,fontWeight:600}}>{item.ItemName} {isVU&&<span style={{background:T.accentLight,color:T.accent,border:`1px solid ${T.accentBorder}`,borderRadius:9,fontSize:9,padding:"1px 6px",fontWeight:700,marginLeft:5}}>📦 VU</span>}</div>
+                      <div style={{color:T.textMuted,fontSize:10}}>{item.Barcode} · {item.Category}{isVU?` · ${item.pieces_per_box}pcs/box · ${item.boxes_per_cotton}box/cotton`:""}</div>
                     </div>
                     <div style={{textAlign:"right"}}>
-                      <div style={{color:T.accent,fontWeight:700,fontSize:13}}>PKR {fmt(item.Price)}</div>
+                      <div style={{color:T.accent,fontWeight:700,fontSize:13}}>PKR {fmt(item.piece_sale_price||item.Price)}/pc</div>
+                      {isVU&&<div style={{color:"#7c3aed",fontSize:10}}>Box: PKR {fmt(item.box_sale_price)} · Cotton: PKR {fmt(item.cotton_sale_price)}</div>}
                       {parseFloat(item.Discount)>0&&<div style={{color:T.posGold,fontSize:10}}>Disc: PKR {fmt(item.Discount)}</div>}
                       <div style={{fontSize:10,color:stk<=0?T.danger:stk<=5?T.warning:T.textMuted}}>Stock: {item.Stock}{stk<=0?" ❌":stk<=5?" ⚠":""}</div>
                     </div>
@@ -216,8 +303,8 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
 
           {/* Cart table */}
           <div style={{flex:1,overflowY:"auto",background:T.bgCard,border:`1px solid ${T.border}`,borderRadius:10,boxShadow:T.shadow}}>
-            <div style={{display:"grid",gridTemplateColumns:"2fr 120px 90px 80px 90px 28px",padding:"8px 12px",background:T.bgTopBar,color:"rgba(255,255,255,0.8)",fontSize:10,letterSpacing:2,fontWeight:700,position:"sticky",top:0}}>
-              <div>ITEM</div><div style={{textAlign:"center"}}>QTY</div><div style={{textAlign:"right"}}>PRICE</div><div style={{textAlign:"right"}}>DISC</div><div style={{textAlign:"right"}}>TOTAL</div><div/>
+            <div style={{display:"grid",gridTemplateColumns:"2fr 200px 90px 80px 90px 28px",padding:"8px 12px",background:T.bgTopBar,color:"rgba(255,255,255,0.8)",fontSize:10,letterSpacing:2,fontWeight:700,position:"sticky",top:0}}>
+              <div>ITEM</div><div style={{textAlign:"center"}}>QTY</div><div style={{textAlign:"right"}}>PRICE/PC</div><div style={{textAlign:"right"}}>DISC</div><div style={{textAlign:"right"}}>TOTAL</div><div/>
             </div>
             {cart.length===0?(
               <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:180,color:T.textMuted,gap:10}}>
@@ -227,28 +314,60 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
               <div key={cat}>
                 <div style={{padding:"5px 12px",background:T.accentLight,color:T.accent,fontSize:10,letterSpacing:2,fontWeight:700,borderBottom:`1px solid ${T.accentBorder}`}}>── {cat.toUpperCase()} ──</div>
                 {grouped[cat].map(item=>{
-                  const disc=parseFloat(item.Discount||0);
-                  const lt=item.qty*parseFloat(item.Price||0)-disc*item.qty;
-                  const isFQ=focusedQtyBarcode===item.Barcode;
+                  const isVU  = vuEnabled(item);
+                  const price = parseFloat(item.piece_sale_price || item.Price || 0);
+                  const disc  = parseFloat(item.Discount||0);
+                  const lt    = item.qty * price - disc * item.qty;
+                  const isFQ  = focusedQtyBarcode === item.Barcode;
+                  const ppb   = parseInt(item.pieces_per_box)   || 1;
+                  const bpc   = parseInt(item.boxes_per_cotton) || 1;
+
                   return(
-                    <div key={item.Barcode} style={{display:"grid",gridTemplateColumns:"2fr 120px 90px 80px 90px 28px",padding:"8px 12px",borderBottom:`1px solid ${T.borderLight}`,alignItems:"center",background:isFQ?T.accentLight:"transparent",transition:"background 0.15s"}}>
+                    <div key={item.Barcode} style={{display:"grid",gridTemplateColumns:"2fr 200px 90px 80px 90px 28px",padding:"8px 12px",borderBottom:`1px solid ${T.borderLight}`,alignItems:"center",background:isFQ?T.accentLight:"transparent",transition:"background 0.15s"}}>
                       <div>
-                        <div style={{color:T.textPrimary,fontSize:13,fontWeight:600}}>{item.ItemName}</div>
-                        <div style={{color:T.textMuted,fontSize:10}}>{item.Barcode}{Number(item.Stock)<=5&&<span style={{color:T.warning,marginLeft:6}}>⚠ Low</span>}</div>
+                        <div style={{color:T.textPrimary,fontSize:13,fontWeight:600}}>
+                          {item.ItemName}
+                          {isVU && <span style={{background:"#f3e8ff",color:"#7c3aed",border:"1px solid #ddd6fe",borderRadius:9,fontSize:9,padding:"1px 6px",fontWeight:700,marginLeft:6}}>📦</span>}
+                        </div>
+                        <div style={{color:T.textMuted,fontSize:10}}>
+                          {item.Barcode}
+                          {Number(item.Stock)<=5&&<span style={{color:T.warning,marginLeft:6}}>⚠ Low</span>}
+                          {isVU&&<span style={{color:"#7c3aed",marginLeft:6}}>· {item.qty} pcs total</span>}
+                        </div>
+                        {/* VU breakdown badge row */}
+                        {isVU && item.qty > 0 && (() => {
+                          const {cottons,boxes,pieces} = resolveToUnits(item.qty, ppb, bpc);
+                          return (
+                            <div style={{display:"flex",gap:4,marginTop:3,flexWrap:"wrap"}}>
+                              {cottons>0&&<span style={{background:"#f3e8ff",color:"#7c3aed",border:"1px solid #ddd6fe",borderRadius:8,fontSize:10,padding:"1px 7px",fontWeight:700}}>{cottons} Cotton</span>}
+                              {boxes>0&&<span style={{background:T.accentLight,color:T.accent,border:`1px solid ${T.accentBorder}`,borderRadius:8,fontSize:10,padding:"1px 7px",fontWeight:700}}>{boxes} Box</span>}
+                              {pieces>0&&<span style={{background:"#fff7ed",color:T.posOrange,border:"1px solid #fed7aa",borderRadius:8,fontSize:10,padding:"1px 7px",fontWeight:700}}>{pieces} Pcs</span>}
+                            </div>
+                          );
+                        })()}
                       </div>
+
+                      {/* QTY column */}
                       <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:3}}>
-                        <button className="btn" onClick={()=>setQty(item.Barcode,item.qty-1)} tabIndex={-1} style={{width:22,height:22,background:T.dangerLight,border:`1px solid ${T.dangerBorder}`,color:T.danger,fontSize:14,borderRadius:5,padding:0}}>−</button>
-                        <input type="number" min="1" value={item.qty}
-                          onChange={e=>{const v=parseInt(e.target.value);if(!isNaN(v)&&v>0)setQty(item.Barcode,v);}}
-                          onFocus={e=>{e.target.select();setFocusedQtyBarcode(item.Barcode);}}
-                          onBlur={()=>{setTimeout(()=>{const active=document.activeElement;const isAnotherQty=Object.values(qtyRefs.current).some(r=>r===active);if(!isAnotherQty)setFocusedQtyBarcode(null);},100);}}
-                          onKeyDown={e=>{if(e.key==="Enter"||e.key==="Escape"){e.preventDefault();setFocusedQtyBarcode(null);setTimeout(()=>{if(searchRef.current){searchRef.current.focus();searchRef.current.select();}},30);}if(e.key==="ArrowUp"){e.preventDefault();setQty(item.Barcode,item.qty+1);}if(e.key==="ArrowDown"){e.preventDefault();if(item.qty>1)setQty(item.Barcode,item.qty-1);}}}
-                          ref={el=>{qtyRefs.current[item.Barcode]=el;}}
-                          className={isFQ?"qty-focus-input":""}
-                          style={{width:50,padding:"4px 6px",background:T.bgCard,border:`1px solid ${T.border}`,borderRadius:5,color:T.textPrimary,fontSize:14,fontWeight:700,textAlign:"center",outline:"none"}} tabIndex={0}/>
-                        <button className="btn" onClick={()=>setQty(item.Barcode,item.qty+1)} tabIndex={-1} style={{width:22,height:22,background:T.accentLight,border:`1px solid ${T.accentBorder}`,color:T.accent,fontSize:14,borderRadius:5,padding:0}}>+</button>
+                        {isVU ? (
+                          <VUQtyRow item={item} onChangeTotal={total => setQty(item.Barcode, total)} />
+                        ) : (
+                          <>
+                            <button className="btn" onClick={()=>setQty(item.Barcode,item.qty-1)} tabIndex={-1} style={{width:22,height:22,background:T.dangerLight,border:`1px solid ${T.dangerBorder}`,color:T.danger,fontSize:14,borderRadius:5,padding:0}}>−</button>
+                            <input type="number" min="1" value={item.qty}
+                              onChange={e=>{const v=parseInt(e.target.value);if(!isNaN(v)&&v>0)setQty(item.Barcode,v);}}
+                              onFocus={e=>{e.target.select();setFocusedQtyBarcode(item.Barcode);}}
+                              onBlur={()=>{setTimeout(()=>{const active=document.activeElement;const isAnotherQty=Object.values(qtyRefs.current).some(r=>r===active);if(!isAnotherQty)setFocusedQtyBarcode(null);},100);}}
+                              onKeyDown={e=>{if(e.key==="Enter"||e.key==="Escape"){e.preventDefault();setFocusedQtyBarcode(null);setTimeout(()=>{if(searchRef.current){searchRef.current.focus();searchRef.current.select();}},30);}if(e.key==="ArrowUp"){e.preventDefault();setQty(item.Barcode,item.qty+1);}if(e.key==="ArrowDown"){e.preventDefault();if(item.qty>1)setQty(item.Barcode,item.qty-1);}}}
+                              ref={el=>{qtyRefs.current[item.Barcode]=el;}}
+                              className={isFQ?"qty-focus-input":""}
+                              style={{width:50,padding:"4px 6px",background:T.bgCard,border:`1px solid ${T.border}`,borderRadius:5,color:T.textPrimary,fontSize:14,fontWeight:700,textAlign:"center",outline:"none"}} tabIndex={0}/>
+                            <button className="btn" onClick={()=>setQty(item.Barcode,item.qty+1)} tabIndex={-1} style={{width:22,height:22,background:T.accentLight,border:`1px solid ${T.accentBorder}`,color:T.accent,fontSize:14,borderRadius:5,padding:0}}>+</button>
+                          </>
+                        )}
                       </div>
-                      <div style={{color:T.textSecondary,textAlign:"right",fontSize:12}}>{fmt(item.Price)}</div>
+
+                      <div style={{color:T.textSecondary,textAlign:"right",fontSize:12}}>{fmt(price)}</div>
                       <div style={{color:disc>0?T.posGold:T.textMuted,textAlign:"right",fontSize:12}}>{disc>0?fmt(disc*item.qty):"—"}</div>
                       <div style={{color:T.success,textAlign:"right",fontSize:13,fontWeight:700}}>PKR {fmt(lt)}</div>
                       <button className="btn" onClick={()=>delItem(item.Barcode)} tabIndex={-1} style={{width:24,height:24,background:T.dangerLight,border:`1px solid ${T.dangerBorder}`,color:T.danger,fontSize:12,borderRadius:4,padding:0}}>✕</button>
@@ -282,15 +401,13 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
           <CashierCustomerLedger customers={customers} sales={sales} currentBillTotal={netTotal}
             onSelectCustomer={(name,cell)=>{setCustName(name);setCustCell(cell);}}
             selectedName={ab.customerName} selectedCell={ab.customerCell}
-            onClear={()=>{setCustName("");setCustCell("");}}/>
+            onClear={()=>{setCustName("");setCustCell("");}}/> 
 
-          {/* Apply Refund */}
           <div style={{background:T.bgCard,border:`1px solid ${T.border}`,borderRadius:11,padding:"11px 13px",boxShadow:T.shadow}}>
             <div style={{color:T.posOrange,fontSize:10,letterSpacing:2,fontWeight:700,marginBottom:8,textTransform:"uppercase"}}>↩ Apply Refund to This Bill</div>
             <RefundApplyPanel returns={returns} onApply={applyRefund} appliedPayments={payments}/>
           </div>
 
-          {/* Cash received (walk-in only) */}
           {(!ab.customerName||ab.customerName.trim()===""||ab.customerName==="Unknown")&&cart.length>0&&(
             <div>
               <label style={{display:"block",color:T.accent,fontSize:10,letterSpacing:1.5,marginBottom:5,fontWeight:700}}>CASH RECEIVED</label>
@@ -306,7 +423,6 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
             </div>
           )}
 
-          {/* Action buttons */}
           <div style={{display:"flex",gap:7}}>
             <button className="btn" onClick={voidCart} tabIndex={-1} style={{flex:1,padding:12,background:T.dangerLight,border:`1px solid ${T.dangerBorder}`,color:T.danger,fontSize:12,borderRadius:8,fontWeight:600}}>🗑 VOID</button>
             <button className="btn" onClick={saveBill}
