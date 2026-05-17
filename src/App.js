@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { SHEET_URLS } from "./config";
+import { SHEET_URLS, CASHIERS } from "./config";
 import {
   openDB, dbGetAll, dbSaveAll, dbPut, dbGet, dbQueueAction,
   dbGetQueue, dbClearQueueItem, dbSetMeta, dbGetMeta,
@@ -7,7 +7,7 @@ import {
 import { parseCSV, buildSearchIndex } from "./utils/helpers";
 import { callScript } from "./utils/api";
 import {
-  DEMO_ITEMS, DEMO_CATEGORIES, DEMO_CASHIERS,
+  DEMO_ITEMS, DEMO_CATEGORIES,
   DEMO_SALES, DEMO_CUSTOMERS, DEMO_RETURNS,
 } from "./data/demoData";
 import LoginScreen  from "./components/LoginScreen";
@@ -92,7 +92,8 @@ export default function App() {
   // ── Data state ──
   const [items,      setItems]      = useState([]);
   const [categories, setCategories] = useState([]);
-  const [cashiers,   setCashiers]   = useState([]);
+  const cashiers    = CASHIERS;   // from config.js — no sheet, no state needed
+  const setCashiers = () => {};   // no-op — kept so props don't break
   const [sales,      setSales]      = useState([]);
   const [customers,  setCustomers]  = useState([]);
   const [returns,    setReturns]    = useState([]);
@@ -143,23 +144,22 @@ export default function App() {
   const loadFromCache = useCallback(async () => {
     try {
       await openDB();
-      const [ci, cc, cca, cs, ccu, cr] = await Promise.all([
-        dbGetAll("items"), dbGetAll("categories"), dbGetAll("cashiers"),
-        dbGetAll("sales"), dbGetAll("customers"),  dbGetAll("returns"),
+      const [ci, cc, cs, ccu, cr] = await Promise.all([
+        dbGetAll("items"), dbGetAll("categories"),
+        dbGetAll("sales"), dbGetAll("customers"), dbGetAll("returns"),
       ]);
       const lastSyncTs = await dbGetMeta("lastSync");
       const billCnt    = await dbGetMeta("billCounter");
       const retCnt     = await dbGetMeta("returnCounter");
       if (ci.length)  { setItems(ci);      }
       if (cc.length)  { setCategories(cc.map(c => c.CategoryName || c.id)); }
-      if (cca.length) { setCashiers(cca);  }
       if (cs.length)  { setSales(cs);      }
       if (ccu.length) { setCustomers(ccu); }
       if (cr.length)  { setReturns(cr);    }
       if (billCnt)    setBillCounter(parseInt(billCnt) || 1);
       if (retCnt)     setReturnCounter(parseInt(retCnt) || 1);
       if (lastSyncTs) setLastSync(new Date(lastSyncTs));
-      return { hasCache: ci.length > 0 || cca.length > 0 };
+      return { hasCache: ci.length > 0 };
     } catch (e) {
       console.warn("Cache load failed:", e);
       return { hasCache: false };
@@ -169,7 +169,6 @@ export default function App() {
   const loadDemo = useCallback(() => {
     setItems(DEMO_ITEMS);
     setCategories(DEMO_CATEGORIES);
-    setCashiers(DEMO_CASHIERS);
     setSales(DEMO_SALES);
     setCustomers(DEMO_CUSTOMERS.map(c => ({ ...c, payments: c.payments || [] })));
     setReturns(DEMO_RETURNS);
@@ -183,9 +182,9 @@ export default function App() {
     syncLock.current = true;
     setSheetStatus("syncing");
     try {
-      const [rawItems, rawCats, rawCashiers, rawSales, rawCustomers, rawReturns] = await Promise.all([
+      const [rawItems, rawCats, rawSales, rawCustomers, rawReturns] = await Promise.all([
         fetchCSV(SHEET_URLS.items),      fetchCSV(SHEET_URLS.categories),
-        fetchCSV(SHEET_URLS.cashiers),   fetchCSV(SHEET_URLS.sales),
+        fetchCSV(SHEET_URLS.sales),
         fetchCSV(SHEET_URLS.customers),  fetchCSV(SHEET_URLS.returns),
       ]);
 
@@ -199,11 +198,6 @@ export default function App() {
       if (catNames.length) {
         setCategories(catNames);
         await dbSaveAll("categories", rawCats, "CategoryName");
-      }
-      // Cashiers
-      if (rawCashiers.length) {
-        setCashiers(rawCashiers);
-        await dbSaveAll("cashiers", rawCashiers, "Username");
       }
       // Sales
       if (rawSales.length) {
