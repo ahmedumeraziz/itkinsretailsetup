@@ -9,7 +9,7 @@ export const SHEET_URLS = {
   stocklog:   `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1905792112`,
   customers:  `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=505470885`,
   returns:    `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1759563627`,
-  hr:         `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=111222333`,
+  hr:         `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1091334160`,
 };
 
 export const REQUIRED_HEADERS = {
