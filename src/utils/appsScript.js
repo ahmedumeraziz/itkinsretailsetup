@@ -11,7 +11,6 @@ var SECRET_TOKEN     = "itKINS@POS#2024$Secure!";
 
 var SHEET_ITEMS      = "Items";
 var SHEET_CATEGORIES = "Categories";
-var SHEET_CASHIER    = "Cashier";
 var SHEET_SALES      = "Sales";
 var SHEET_STOCKLOG   = "StockLog";
 var SHEET_CUSTOMER   = "Customer";
@@ -24,7 +23,6 @@ var HEADERS = {
                "variable_unit_enabled","piece_sale_price","piece_cost_price","pieces_per_box","boxes_per_cotton",
                "box_sale_price","box_cost_price","cotton_sale_price","cotton_cost_price"],
   Categories: ["CategoryName"],
-  Cashier:    ["Name","Username","PIN","Role"],
   Sales:      ["BillNo","Date","Time","Cashier","GrandTotal","Discount","FBR","PaymentMethod","ItemsDetail","CustomerName","CustomerCell","RefundApplied","RefundReturnNo"],
   StockLog:   ["Date","Barcode","ItemName","StockBefore","StockAfter","Reason"],
   Customer:   ["Name","CellNo","BillNo","Payments","OpeningDebit"],
@@ -62,9 +60,6 @@ function doPost(e) {
       case "deleteItem":       result = deleteItem(ss, data);       break;
       case "addCategory":      result = addCategory(ss, data);      break;
       case "deleteCategory":   result = deleteCategory(ss, data);   break;
-      case "addCashier":       result = addCashier(ss, data);       break;
-      case "editCashier":      result = editCashier(ss, data);      break;
-      case "deleteCashier":    result = deleteCashier(ss, data);    break;
       case "saveReturn":       result = saveReturn(ss, data);       break;
       case "markReturnUsed":   result = markReturnUsed(ss, data);   break;
       case "ensureHeaders":        result = ensureAllHeaders(ss);              break;
@@ -111,7 +106,7 @@ function generateAllSheets(ss) {
   var created = [];
   var fixed   = [];
   var sheetMap = {
-    Items: SHEET_ITEMS, Categories: SHEET_CATEGORIES, Cashier: SHEET_CASHIER,
+    Items: SHEET_ITEMS, Categories: SHEET_CATEGORIES,
     Sales: SHEET_SALES, StockLog: SHEET_STOCKLOG, Customer: SHEET_CUSTOMER, Returns: SHEET_RETURNS, HR: SHEET_HR
   };
   Object.keys(sheetMap).forEach(function(key) {
@@ -153,7 +148,7 @@ function generateAllSheets(ss) {
 function ensureAllHeaders(ss) {
   var fixed = [];
   var sheetMap = {
-    Items: SHEET_ITEMS, Categories: SHEET_CATEGORIES, Cashier: SHEET_CASHIER,
+    Items: SHEET_ITEMS, Categories: SHEET_CATEGORIES,
     Sales: SHEET_SALES, StockLog: SHEET_STOCKLOG, Customer: SHEET_CUSTOMER, Returns: SHEET_RETURNS, HR: SHEET_HR
   };
   Object.keys(sheetMap).forEach(function(key) {
@@ -680,43 +675,6 @@ function deleteCategory(ss, data) {
 }
 
 // ── CASHIER CRUD ──────────────────────────────────────────────────────────────
-function addCashier(ss, data) {
-  var sh = ss.getSheetByName(SHEET_CASHIER);
-  if (!sh) return { status: "error", message: "Cashier sheet not found" };
-  var hdrMap = getHeaders(sh);
-  var unIdx  = hdrMap["Username"];
-  if (unIdx === undefined) return { status: "error", message: "No Username column" };
-  if (findRow(sh, unIdx, data.Username) !== -1) return { status: "error", message: "Username already exists" };
-  sh.appendRow([data.Name || "", data.Username || "", data.PIN || "", data.Role || "cashier"]);
-  return { status: "ok" };
-}
-
-function editCashier(ss, data) {
-  var sh = ss.getSheetByName(SHEET_CASHIER);
-  if (!sh) return { status: "error", message: "Cashier sheet not found" };
-  var hdrMap = getHeaders(sh);
-  var unIdx  = hdrMap["Username"];
-  if (unIdx === undefined) return { status: "error", message: "No Username column" };
-  var rowNum = findRow(sh, unIdx, data.OrigUsername || data.Username);
-  if (rowNum === -1) return { status: "error", message: "User not found" };
-  var updates = { "Name": data.Name, "Username": data.Username, "PIN": data.PIN, "Role": data.Role };
-  Object.keys(updates).forEach(function(col) {
-    if (hdrMap[col] !== undefined) sh.getRange(rowNum, hdrMap[col] + 1).setValue(updates[col]);
-  });
-  return { status: "ok" };
-}
-
-function deleteCashier(ss, data) {
-  var sh = ss.getSheetByName(SHEET_CASHIER);
-  if (!sh) return { status: "error", message: "Cashier sheet not found" };
-  var unIdx = getHeaders(sh)["Username"];
-  if (unIdx === undefined) return { status: "error", message: "No Username column" };
-  var rowNum = findRow(sh, unIdx, data.Username);
-  if (rowNum === -1) return { status: "error", message: "User not found" };
-  sh.deleteRow(rowNum);
-  return { status: "ok" };
-}
-
 // ══════════════════════════════════════════════════════════════════════════════
 // DAILY BACKUP SCRIPT
 // Run createDailyBackupTrigger() ONCE to activate (runs daily at 2 AM PKT)
