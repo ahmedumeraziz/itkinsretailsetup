@@ -48,7 +48,7 @@ export async function generateAllSheets() {
 // Tests every sheet URL + script ping. Returns per-sheet results.
 export async function deepTestConnections() {
   const results = {};
-  const sheetKeys = ["items", "categories", "cashiers", "sales", "stocklog", "customers", "returns"];
+  const sheetKeys = ["items", "categories", "cashiers", "sales", "stocklog", "customers", "returns", "hr"];
 
   await Promise.all(sheetKeys.map(async key => {
     const r = {
