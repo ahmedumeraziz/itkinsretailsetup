@@ -151,7 +151,6 @@ export function SetupTab({ sheetStatus, onRefresh, lastSync, safeCallScript }) {
   const SHEET_META = {
     items:      { label:"📦 Items",       tabName:"Items",      desc:"Products, barcodes, prices, stock, expiry & variable unit config" },
     categories: { label:"🏷 Categories",  tabName:"Categories", desc:"Product category names" },
-    cashiers:   { label:"👤 Cashier",     tabName:"Cashier",    desc:"Staff accounts, PINs, roles" },
     sales:      { label:"💰 Sales",       tabName:"Sales",      desc:"Bills, items sold, totals, payment method" },
     stocklog:   { label:"📉 StockLog",    tabName:"StockLog",   desc:"Stock adjustments and deductions log" },
     customers:  { label:"🧑 Customer",    tabName:"Customer",   desc:"Credit customers, payments, opening debit" },
@@ -197,15 +196,15 @@ export function SetupTab({ sheetStatus, onRefresh, lastSync, safeCallScript }) {
 
   const checkDB = async () => {
     try {
-      const [items,sales,customers,cats,cashiers,rets,queue]=await Promise.all([dbGetAll("items"),dbGetAll("sales"),dbGetAll("customers"),dbGetAll("categories"),dbGetAll("cashiers"),dbGetAll("returns"),dbGetAll("pendingQueue")]);
+      const [items,sales,customers,cats,rets,queue]=await Promise.all([dbGetAll("items"),dbGetAll("sales"),dbGetAll("customers"),dbGetAll("categories"),dbGetAll("returns"),dbGetAll("pendingQueue")]);
       const ls=await dbGetMeta("lastSync");
-      setDbInfo({items:items.length,sales:sales.length,customers:customers.length,categories:cats.length,cashiers:cashiers.length,returns:rets.length,queue:queue.length,lastSync:ls});
+      setDbInfo({items:items.length,sales:sales.length,customers:customers.length,categories:cats.length,returns:rets.length,queue:queue.length,lastSync:ls});
     } catch(e){setDbInfo({error:e.message});}
   };
 
   const clearDB = async () => {
     if(!window.confirm("Clear all local offline data?\n\n✅ Database data stays safe — only browser cache is cleared.\n\nYou need internet to reload data.")) return;
-    for(const s of ["items","categories","cashiers","sales","customers","returns","stocklog","meta","pendingQueue"]) await dbClear(s).catch(()=>{});
+    for(const s of ["items","categories","sales","customers","returns","stocklog","meta","pendingQueue"]) await dbClear(s).catch(()=>{});
     setDbInfo(null); alert("✅ Cache cleared. Refresh page to reload from Database.");
   };
 
@@ -233,7 +232,7 @@ export function SetupTab({ sheetStatus, onRefresh, lastSync, safeCallScript }) {
         </div>
         {dbInfo&&(dbInfo.error?<div style={{color:T.danger,fontSize:12}}>Error: {dbInfo.error}</div>:
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:9,marginBottom:10}}>
-            {[["Items",dbInfo.items,T.accent],["Sales",dbInfo.sales,T.success],["Customers",dbInfo.customers,"#7c3aed"],["Categories",dbInfo.categories,T.posGold],["Cashiers",dbInfo.cashiers,T.accent],["Returns",dbInfo.returns,T.posOrange],["Pending Queue",dbInfo.queue,dbInfo.queue>0?T.danger:T.success],["Last Sync",dbInfo.lastSync?new Date(dbInfo.lastSync).toLocaleTimeString("en-PK"):"Never",T.textSecondary]].map(([l,v,c])=>(
+            {[["Items",dbInfo.items,T.accent],["Sales",dbInfo.sales,T.success],["Customers",dbInfo.customers,"#7c3aed"],["Categories",dbInfo.categories,T.posGold],["Returns",dbInfo.returns,T.posOrange],["Pending Queue",dbInfo.queue,dbInfo.queue>0?T.danger:T.success],["Last Sync",dbInfo.lastSync?new Date(dbInfo.lastSync).toLocaleTimeString("en-PK"):"Never",T.textSecondary]].map(([l,v,c])=>(
               <div key={l} style={{background:T.bgCardAlt,border:`1px solid ${T.border}`,borderRadius:8,padding:"9px 12px"}}>
                 <div style={{color:T.textMuted,fontSize:9,letterSpacing:1,marginBottom:3,textTransform:"uppercase"}}>{l}</div>
                 <div style={{color:c||T.textPrimary,fontWeight:700,fontSize:14}}>{v}</div>
