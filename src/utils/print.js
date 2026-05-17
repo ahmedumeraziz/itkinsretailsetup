@@ -1,7 +1,14 @@
 import { fmt, safeParseItems, getExpiryStatus, fmtExpiry } from "./helpers";
 
+// ── VU helpers (mirrored from POSScreen) ─────────────────────────────────────
+function vuEnabled(item) {
+  return !!(item.variable_unit_enabled &&
+    parseInt(item.pieces_per_box) > 0 &&
+    parseInt(item.boxes_per_cotton) > 0);
+}
+
 // ─── PRINT RECEIPT ────────────────────────────────────────────────────────────
-export function printReceipt(bill) {
+export function printReceipt(bill, isReprint = false) {
   const isCredit = !!(
     bill.customerName &&
     bill.customerName.trim() !== "" &&
@@ -21,14 +28,40 @@ export function printReceipt(bill) {
   cats.forEach(cat => {
     itemsHtml += `<div class="cat-hdr">── ${cat} ──</div>`;
     grouped[cat].forEach(item => {
-      const disc = parseFloat(item.Discount || 0);
-      const lt   = item.qty * parseFloat(item.Price || 0) - disc * item.qty;
-      itemsHtml += `
-        <div class="item">
-          <div class="iname">${item.ItemName || item.Barcode}</div>
-          <div class="idet">${item.qty} x PKR ${fmt(item.Price)}${disc > 0 ? `  Disc: PKR ${fmt(disc * item.qty)}` : ""}</div>
-          <div class="itot">PKR ${fmt(lt)}</div>
-        </div>`;
+      const isVU   = vuEnabled(item);
+      const disc   = parseFloat(item.Discount || 0);
+      const price  = parseFloat(item.piece_sale_price || item.Price || 0);
+      const qty    = parseInt(item.qty || item.qty_total_pcs || 0);
+      const lt     = qty * price - disc * qty;
+
+      if (isVU && qty > 0) {
+        // Variable unit receipt line
+        const cottons = parseInt(item.qty_cottons || 0);
+        const boxes   = parseInt(item.qty_boxes   || 0);
+        const pieces  = parseInt(item.qty_pieces  || 0);
+        const badges  = [
+          cottons > 0 ? `[${cottons} Cotton]` : "",
+          boxes   > 0 ? `[${boxes} Box]`      : "",
+          pieces  > 0 ? `[${pieces} Piece]`   : "",
+        ].filter(Boolean).join(" ");
+
+        itemsHtml += `
+          <div class="item">
+            <div style="display:flex;justify-content:space-between;align-items:top">
+              <div class="iname">${item.ItemName || item.Barcode}</div>
+              <div class="itot">Rs. ${fmt(lt)}</div>
+            </div>
+            <div class="idet">${badges}</div>
+            <div class="idet">${qty} pcs x Rs. ${fmt(price)}${disc > 0 ? `  Disc: Rs. ${fmt(disc * qty)}` : ""}</div>
+          </div>`;
+      } else {
+        itemsHtml += `
+          <div class="item">
+            <div class="iname">${item.ItemName || item.Barcode}</div>
+            <div class="idet">${qty} x PKR ${fmt(price)}${disc > 0 ? `  Disc: PKR ${fmt(disc * qty)}` : ""}</div>
+            <div class="itot">PKR ${fmt(lt)}</div>
+          </div>`;
+      }
     });
   });
 
@@ -37,7 +70,6 @@ export function printReceipt(bill) {
     ? `<div class="tr" style="color:#a00"><span>Bill Discount (${bill.billDiscountPct}%)</span><span>- PKR ${fmt(bill.billDiscount)}</span></div>`
     : "";
 
-  // Refund line — shown for both cash and credit
   const refundLine = bill.refundApplied > 0
     ? `<div class="tr" style="color:#b05000;font-weight:700">
          <span>↩ Refund ${bill.refundReturnNo ? `(${bill.refundReturnNo})` : ""}</span>
@@ -47,7 +79,6 @@ export function printReceipt(bill) {
 
   // ── Payment section ────────────────────────────────────────────────────────
   let paymentSection = "";
-
   if (isCredit) {
     const prevPending     = parseFloat(bill.prevPending || 0);
     const grandTotalDebit = parseFloat(bill.grandTotal || 0) + prevPending;
@@ -63,7 +94,6 @@ export function printReceipt(bill) {
       </div>
       <div style="text-align:center;font-size:10px;margin-top:5px;color:#555">Credit Sale — Please pay by due date</div>`;
   } else {
-    // Walk-in / cash customer
     let payHtml = "";
     (bill.payments || []).forEach(p => {
       const amt = parseFloat(p.amount) || 0;
@@ -84,9 +114,13 @@ export function printReceipt(bill) {
       </div>`;
   }
 
-  // Customer line
   const custLine = isCredit
     ? `<div class="bi"><span>Customer: ${bill.customerName}</span><span>${bill.customerCell || ""}</span></div>`
+    : "";
+
+  const reprintBanner = isReprint
+    ? `<div style="text-align:center;border:2px dashed #c00;padding:4px;margin-bottom:6px;font-weight:bold;font-size:13px;color:#c00">★ REPRINT ★</div>
+       <div style="text-align:center;font-size:9px;color:#888;margin-bottom:4px">Original: ${bill.date} ${bill.time}</div>`
     : "";
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
@@ -97,16 +131,18 @@ export function printReceipt(bill) {
     .dv{border-top:1px dashed #000;margin:5px 0}
     .bi{display:flex;justify-content:space-between;font-size:10px;margin:1px 0}
     .cat-hdr{text-align:center;font-weight:bold;margin:6px 0 2px;font-size:11px}
-    .item{margin:3px 0}
+    .item{margin:4px 0;padding-bottom:3px;border-bottom:1px dotted #ddd}
     .iname{font-weight:bold;font-size:11px}
-    .idet{font-size:10px;padding-left:6px;color:#333}
+    .idet{font-size:10px;padding-left:6px;color:#333;margin-top:1px}
     .itot{font-size:11px;text-align:right;font-weight:bold}
     .tr{display:flex;justify-content:space-between;margin:2px 0;font-size:12px}
     .gr{font-size:14px;font-weight:bold;margin:4px 0}
     .pr{display:flex;justify-content:space-between;font-size:11px;margin:2px 0}
     .ft{text-align:center;font-size:10px;margin-top:8px}
+    .vu-badge{display:inline-block;border:1px solid #333;border-radius:3px;padding:0 3px;font-size:10px;font-weight:bold;margin-right:2px}
     @media print{body{margin:0}}
   </style></head><body>
+  ${reprintBanner}
   <div class="sn">MIAN TRADERS</div>
   <div class="sn">GUJRANWALA</div>
   <div class="dv"></div>
@@ -200,11 +236,12 @@ export function downloadStockPDF(filtered, filterCat, filterCo, filterStatus) {
     const expiryColor = es.status === "expired" ? "#c0392b" : es.status === "critical" || es.status === "today" ? "#d35400" : es.status === "warning" ? "#d68910" : es.status === "ok" ? "#1e8449" : "#888";
     const expiryText  = item.ExpiryDate ? fmtExpiry(item.ExpiryDate) : "—";
     const expiryLabel = item.ExpiryDate ? es.label : "";
+    const vuBadge     = vuEnabled(item) ? `<span style="background:#f3e8ff;color:#7c3aed;border:1px solid #ddd6fe;border-radius:8px;font-size:9px;padding:1px 5px;font-weight:700">📦 VU</span>` : "";
     return `
       <tr style="background:${rowBg}">
         <td style="text-align:center;color:#888">${i + 1}</td>
         <td style="font-family:monospace;font-size:10px;color:#555">${item.Barcode}</td>
-        <td style="font-weight:600;color:#111">${item.ItemName}</td>
+        <td style="font-weight:600;color:#111">${item.ItemName} ${vuBadge}</td>
         <td style="color:#444">${item.Category || "—"}</td>
         <td style="color:#0057a8">${item.Company || "—"}</td>
         <td style="text-align:right;font-weight:700">PKR ${fmt(item.Price)}</td>
@@ -266,4 +303,10 @@ export function downloadStockPDF(filtered, filterCat, filterCo, filterStatus) {
   if (!w) { alert("Please allow popups to download PDF!"); return; }
   w.document.write(html);
   w.document.close();
+}
+
+function vuEnabled(item) {
+  return !!(item.variable_unit_enabled &&
+    parseInt(item.pieces_per_box) > 0 &&
+    parseInt(item.boxes_per_cotton) > 0);
 }
