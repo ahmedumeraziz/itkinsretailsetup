@@ -304,9 +304,3 @@ export function downloadStockPDF(filtered, filterCat, filterCo, filterStatus) {
   w.document.write(html);
   w.document.close();
 }
-
-function vuEnabled(item) {
-  return !!(item.variable_unit_enabled &&
-    parseInt(item.pieces_per_box) > 0 &&
-    parseInt(item.boxes_per_cotton) > 0);
-}
