@@ -1,6 +1,6 @@
 // ─── SHEET CONFIG ─────────────────────────────────────────────────────────────
 export const SHEET_ID        = "1_iXcsPI8C1g0UQaAcacbKjsHq9AWI3IRIsCbX2E87qk";
-export const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyrNwMthEEsUNF9HXJbRcQjgJBqkqD860-GBuzx8ZmSv8A8OR4d_KlOla2IQlo20_NH/exec";
+export const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwcEo9F6bysSR0YEEWurV97DTerTTZ40gLQlMEk-EYELEI85T3Ive2-3UUWbJ5wkS1F/exec";
 
 export const SHEET_URLS = {
   items:      `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=0`,
