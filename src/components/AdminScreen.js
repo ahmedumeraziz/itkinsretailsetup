@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { T, bdgSt } from "../config";
+import { T } from "../config";
 import StatusBar from "./StatusBar";
 import { ItemsTab, CategoriesTab, CashiersTab } from "./AdminTabs1";
 import { SalesTab, ReturnsTab, ProfitTab } from "./AdminTabs2";
