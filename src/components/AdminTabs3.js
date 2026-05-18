@@ -21,7 +21,10 @@ function SummaryCard({ label, value, color, bg, border }) {
 // ── STOCK TAB ─────────────────────────────────────────────────────────────────
 export function StockTab({ items, setItems, safeCallScript }) {
   const [adjusting,    setAdjusting]    = useState(null);
-  const [adjVal,       setAdjVal]       = useState("");
+  const [adjPieces,    setAdjPieces]    = useState("");
+  const [adjCottons,   setAdjCottons]   = useState("0");
+  const [adjBoxes,     setAdjBoxes]     = useState("0");
+  const [adjLoose,     setAdjLoose]     = useState("0");
   const [filterCat,    setFilterCat]    = useState("All");
   const [filterCo,     setFilterCo]     = useState("All");
   const [filterStatus, setFilterStatus] = useState("All");
@@ -43,13 +46,73 @@ export function StockTab({ items, setItems, safeCallScript }) {
     return true;
   }).sort((a,b) => (Number(a.Stock)||0) - (Number(b.Stock)||0));
 
+  // ── VU helpers ─────────────────────────────────────────────────────────────
+  const isVU = item => !!(item.variable_unit_enabled &&
+    parseInt(item.pieces_per_box) > 0 && parseInt(item.boxes_per_cotton) > 0);
+
+  const resolveStock = (totalPieces, ppb, bpc) => {
+    const ppc     = ppb * bpc;
+    const cottons = Math.floor(totalPieces / ppc);
+    const rem     = totalPieces % ppc;
+    const boxes   = Math.floor(rem / ppb);
+    const loose   = rem % ppb;
+    return { cottons, boxes, loose };
+  };
+
+  const unitsToTotal = (c, b, l, ppb, bpc) =>
+    (parseInt(c)||0)*ppb*bpc + (parseInt(b)||0)*ppb + (parseInt(l)||0);
+
+  // Typing in a unit field → auto-update total pieces
+  const onUnitChange = (field, val, item) => {
+    const ppb = parseInt(item.pieces_per_box)||1;
+    const bpc = parseInt(item.boxes_per_cotton)||1;
+    let c = parseInt(adjCottons)||0;
+    let b = parseInt(adjBoxes)  ||0;
+    let l = parseInt(adjLoose)  ||0;
+    if (field==="c") c = Math.max(0, parseInt(val)||0);
+    if (field==="b") b = Math.max(0, parseInt(val)||0);
+    if (field==="l") l = Math.max(0, parseInt(val)||0);
+    setAdjCottons(String(c));
+    setAdjBoxes(String(b));
+    setAdjLoose(String(l));
+    setAdjPieces(String(unitsToTotal(c, b, l, ppb, bpc)));
+  };
+
+  // Typing total pieces → auto-resolve into units
+  const onPiecesChange = (val, item) => {
+    setAdjPieces(val);
+    if (!isVU(item)) return;
+    const ppb = parseInt(item.pieces_per_box)||1;
+    const bpc = parseInt(item.boxes_per_cotton)||1;
+    const { cottons, boxes, loose } = resolveStock(Math.max(0, parseInt(val)||0), ppb, bpc);
+    setAdjCottons(String(cottons));
+    setAdjBoxes(String(boxes));
+    setAdjLoose(String(loose));
+  };
+
+  const startAdjust = item => {
+    const stk = Number(item.Stock)||0;
+    setAdjusting(item.Barcode);
+    setAdjPieces(String(stk));
+    if (isVU(item)) {
+      const ppb = parseInt(item.pieces_per_box)||1;
+      const bpc = parseInt(item.boxes_per_cotton)||1;
+      const { cottons, boxes, loose } = resolveStock(stk, ppb, bpc);
+      setAdjCottons(String(cottons));
+      setAdjBoxes(String(boxes));
+      setAdjLoose(String(loose));
+    }
+  };
+
   const doAdjust = async bc => {
-    const n = parseInt(adjVal); if (isNaN(n)||n<0) return;
-    const old = items.find(i=>i.Barcode===bc); const before=Number(old?.Stock)||0;
-    setItems(p => p.map(i => i.Barcode===bc ? {...i,Stock:String(n)} : i));
-    try { await dbPut("items",{...old,Stock:String(n),id:bc}); } catch {}
+    const n = parseInt(adjPieces);
+    if (isNaN(n) || n < 0) return;
+    const old    = items.find(i => i.Barcode === bc);
+    const before = Number(old?.Stock)||0;
+    setItems(p => p.map(i => i.Barcode===bc ? {...i, Stock: String(n)} : i));
+    try { await dbPut("items", {...old, Stock: String(n), id: bc}); } catch {}
     safeCallScript({ action:"adjustStock", Barcode:bc, AdjustType:"set", Value:n, Reason:"Admin Manual", Before:before, After:n, ItemName:old?.ItemName||bc });
-    setAdjusting(null); setAdjVal("");
+    setAdjusting(null); setAdjPieces(""); setAdjCottons("0"); setAdjBoxes("0"); setAdjLoose("0");
   };
 
   const handleDownloadPDF = async () => {
@@ -58,13 +121,23 @@ export function StockTab({ items, setItems, safeCallScript }) {
     finally { setPdfLoading(false); }
   };
 
+  const numIn = (val, onChange, color, label) => (
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+      <span style={{fontSize:9,color,fontWeight:700,letterSpacing:1}}>{label}</span>
+      <input type="number" min="0" value={val} onChange={e=>onChange(e.target.value)}
+        onFocus={e=>e.target.select()}
+        style={{width:50,padding:"4px",background:T.bgCard,border:`1.5px solid ${color}`,borderRadius:6,
+          color:T.textPrimary,fontSize:13,fontWeight:700,textAlign:"center",outline:"none"}}/>
+    </div>
+  );
+
   return (
     <div>
       {/* Summary */}
-      <div style={{ display:"flex", gap:11, marginBottom:16, flexWrap:"wrap" }}>
+      <div style={{display:"flex",gap:11,marginBottom:16,flexWrap:"wrap"}}>
         <SummaryCard label="Out of Stock"   value={items.filter(i=>(Number(i.Stock)||0)<=0).length}                          color={T.danger}  bg={T.dangerLight}  border={T.dangerBorder}  />
-        <SummaryCard label="Low Stock (≤5)" value={items.filter(i=>(Number(i.Stock)||0)>0&&(Number(i.Stock)||0)<=5).length}   color={T.warning} bg={T.warningLight} border={T.warningBorder} />
-        <SummaryCard label="In Stock"       value={items.filter(i=>(Number(i.Stock)||0)>5).length}                            color={T.success} bg={T.successLight} border={T.successBorder} />
+        <SummaryCard label="Low Stock (≤5)" value={items.filter(i=>(Number(i.Stock)||0)>0&&(Number(i.Stock)||0)<=5).length}  color={T.warning} bg={T.warningLight} border={T.warningBorder} />
+        <SummaryCard label="In Stock"       value={items.filter(i=>(Number(i.Stock)||0)>5).length}                           color={T.success} bg={T.successLight} border={T.successBorder} />
         <SummaryCard label="Stock Value"    value={`PKR ${fmt(items.reduce((s,i)=>s+parseFloat(i.Price||0)*(Number(i.Stock)||0),0))}`} color={T.accent} bg={T.accentLight} border={T.accentBorder} />
       </div>
 
@@ -72,10 +145,9 @@ export function StockTab({ items, setItems, safeCallScript }) {
       {(()=>{
         const exp  = items.filter(i=>getExpiryStatus(i.ExpiryDate).status==="expired");
         const crit = items.filter(i=>["critical","today"].includes(getExpiryStatus(i.ExpiryDate).status));
-        const warn = items.filter(i=>getExpiryStatus(i.ExpiryDate).status==="warning");
-        if(!exp.length&&!crit.length&&!warn.length) return null;
+        if(!exp.length&&!crit.length) return null;
         return (
-          <div style={{ display:"flex",flexDirection:"column",gap:7,marginBottom:14 }}>
+          <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:14}}>
             {exp.length>0&&<div style={{padding:"10px 16px",background:T.dangerLight,border:`1px solid ${T.dangerBorder}`,borderRadius:9,display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:18}}>⛔</span><div><div style={{color:T.danger,fontWeight:700,fontSize:12}}>{exp.length} EXPIRED item(s)</div><div style={{color:T.danger,fontSize:11,opacity:0.8}}>{exp.map(i=>i.ItemName).join(", ")}</div></div></div>}
             {crit.length>0&&<div style={{padding:"10px 16px",background:T.warningLight,border:`1px solid ${T.warningBorder}`,borderRadius:9,display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:18}}>⚠️</span><div><div style={{color:T.warning,fontWeight:700,fontSize:12}}>{crit.length} item(s) expiring within 7 days</div><div style={{color:T.warning,fontSize:11,opacity:0.8}}>{crit.map(i=>`${i.ItemName} (${getExpiryStatus(i.ExpiryDate).label})`).join(", ")}</div></div></div>}
           </div>
@@ -83,7 +155,7 @@ export function StockTab({ items, setItems, safeCallScript }) {
       })()}
 
       {/* Filters */}
-      <div style={{ display:"flex", gap:9, marginBottom:13, flexWrap:"wrap", alignItems:"center" }}>
+      <div style={{display:"flex",gap:9,marginBottom:13,flexWrap:"wrap",alignItems:"center"}}>
         <select value={filterCat}    onChange={e=>setFilterCat(e.target.value)}    style={{...slSt,background:T.bgCard}}><option value="All">All Categories</option>{categories.map(c=><option key={c}>{c}</option>)}</select>
         <select value={filterCo}     onChange={e=>setFilterCo(e.target.value)}     style={{...slSt,background:T.bgCard}}><option value="All">All Companies</option>{companies.map(c=><option key={c}>{c}</option>)}</select>
         <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)} style={{...slSt,background:T.bgCard}}>
@@ -98,35 +170,95 @@ export function StockTab({ items, setItems, safeCallScript }) {
 
       {/* Table */}
       <div style={card}>
-        <div style={{display:"grid",gridTemplateColumns:"110px 1fr 110px 110px 85px 90px 105px 130px",...thSt}}>
-          <div>BARCODE</div><div>ITEM</div><div>COMPANY</div><div>CATEGORY</div><div style={{textAlign:"right"}}>PRICE</div><div style={{textAlign:"right"}}>STOCK</div><div style={{textAlign:"center"}}>EXPIRY</div><div style={{textAlign:"center"}}>ADJUST</div>
+        <div style={{display:"grid",gridTemplateColumns:"100px 1fr 95px 95px 75px 210px 100px 160px",...thSt}}>
+          <div>BARCODE</div><div>ITEM</div><div>COMPANY</div><div>CATEGORY</div>
+          <div style={{textAlign:"right"}}>PRICE</div>
+          <div style={{textAlign:"center"}}>STOCK · Cotton · Box · Pcs</div>
+          <div style={{textAlign:"center"}}>EXPIRY</div>
+          <div style={{textAlign:"center"}}>ADJUST</div>
         </div>
         {filtered.map((item,i)=>{
-          const stk=Number(item.Stock)||0;
-          const sc=stk<=0?T.danger:stk<=5?T.warning:T.success;
-          const rowBg=stk<=0?T.dangerLight:stk<=5?T.warningLight:"transparent";
+          const stk    = Number(item.Stock)||0;
+          const sc     = stk<=0?T.danger:stk<=5?T.warning:T.success;
+          const rowBg  = stk<=0?T.dangerLight:stk<=5?T.warningLight:"transparent";
+          const vu     = isVU(item);
+          const ppb    = parseInt(item.pieces_per_box)||1;
+          const bpc    = parseInt(item.boxes_per_cotton)||1;
+          const { cottons=0, boxes=0, loose=0 } = vu ? resolveStock(stk,ppb,bpc) : {};
+          const isAdj  = adjusting === item.Barcode;
           return(
-            <div key={i} style={{display:"grid",gridTemplateColumns:"110px 1fr 110px 110px 85px 90px 105px 130px",padding:"8px 12px",borderBottom:`1px solid ${T.borderLight}`,alignItems:"center",background:rowBg}}>
+            <div key={i} style={{display:"grid",gridTemplateColumns:"100px 1fr 95px 95px 75px 210px 100px 160px",
+              padding:"9px 12px",borderBottom:`1px solid ${T.borderLight}`,alignItems:"center",background:rowBg}}>
+
               <div style={{color:T.textMuted,fontSize:11}}>{item.Barcode}</div>
-              <div style={{color:T.textPrimary,fontSize:12,fontWeight:600}}>{item.ItemName}</div>
+              <div>
+                <div style={{color:T.textPrimary,fontSize:12,fontWeight:600}}>{item.ItemName}</div>
+                {vu&&<div style={{fontSize:9,color:"#7c3aed",marginTop:2,fontWeight:600}}>📦 {ppb}pcs/box · {bpc}box/cotton</div>}
+              </div>
               <div style={{color:T.accent,fontSize:11}}>{item.Company||"—"}</div>
               <div style={{color:T.textSecondary,fontSize:11}}>{item.Category}</div>
               <div style={{color:T.accent,textAlign:"right",fontSize:12,fontWeight:700}}>PKR {fmt(item.Price)}</div>
-              <div style={{textAlign:"right"}}><span style={{color:sc,fontWeight:700,fontSize:14}}>{item.Stock}</span>{stk<=0&&<span style={{marginLeft:4,fontSize:9,color:T.danger,fontWeight:700,background:T.dangerLight,padding:"1px 5px",borderRadius:10}}>OUT</span>}{stk>0&&stk<=5&&<span style={{marginLeft:4,fontSize:9,color:T.warning,fontWeight:700,background:T.warningLight,padding:"1px 5px",borderRadius:10}}>LOW</span>}</div>
+
+              {/* Stock column */}
+              <div style={{textAlign:"center"}}>
+                {vu ? (
+                  <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:4,flexWrap:"wrap"}}>
+                    <span style={{background:"#f3e8ff",color:"#7c3aed",border:"1px solid #ddd6fe",borderRadius:8,fontSize:11,padding:"2px 7px",fontWeight:700,whiteSpace:"nowrap"}}>{cottons}C</span>
+                    <span style={{color:T.textMuted,fontSize:9}}>·</span>
+                    <span style={{background:T.accentLight,color:T.accent,border:`1px solid ${T.accentBorder}`,borderRadius:8,fontSize:11,padding:"2px 7px",fontWeight:700,whiteSpace:"nowrap"}}>{boxes}B</span>
+                    <span style={{color:T.textMuted,fontSize:9}}>·</span>
+                    <span style={{background:"#fff7ed",color:T.posOrange,border:"1px solid #fed7aa",borderRadius:8,fontSize:11,padding:"2px 7px",fontWeight:700,whiteSpace:"nowrap"}}>{loose}P</span>
+                    <span style={{color:T.textMuted,fontSize:10}}>= <b style={{color:sc}}>{stk}</b></span>
+                  </div>
+                ) : (
+                  <div>
+                    <span style={{color:sc,fontWeight:700,fontSize:14}}>{item.Stock}</span>
+                    {stk<=0&&<span style={{marginLeft:4,fontSize:9,color:T.danger,fontWeight:700,background:T.dangerLight,padding:"1px 5px",borderRadius:10}}>OUT</span>}
+                    {stk>0&&stk<=5&&<span style={{marginLeft:4,fontSize:9,color:T.warning,fontWeight:700,background:T.warningLight,padding:"1px 5px",borderRadius:10}}>LOW</span>}
+                  </div>
+                )}
+              </div>
+
+              {/* Expiry */}
               {(()=>{const es=getExpiryStatus(item.ExpiryDate);return(
                 <div style={{textAlign:"center"}}>
                   <div style={{color:es.color,fontSize:10,fontWeight:700}}>{fmtExpiry(item.ExpiryDate)}</div>
                   {item.ExpiryDate&&<div style={{fontSize:9,color:es.color,opacity:0.85}}>{es.label}</div>}
                 </div>);})()}
-              <div style={{display:"flex",justifyContent:"center",gap:5}}>
-                {adjusting===item.Barcode?(
-                  <>
-                    <input type="number" value={adjVal} onChange={e=>setAdjVal(e.target.value)} style={{...inSt,width:68,padding:"5px 7px",textAlign:"center",background:T.bgCard}} autoFocus onKeyDown={e=>e.key==="Enter"&&doAdjust(item.Barcode)}/>
-                    <button className="btn" onClick={()=>doAdjust(item.Barcode)} style={{padding:"5px 8px",background:"linear-gradient(135deg,#047857,#059669)",color:"#fff",fontSize:11,borderRadius:5,border:"none",fontWeight:600}}>✓</button>
-                    <button className="btn" onClick={()=>setAdjusting(null)} style={{padding:"5px 7px",background:T.bgCardAlt,border:`1px solid ${T.border}`,color:T.textSecondary,fontSize:11,borderRadius:5}}>✕</button>
-                  </>
-                ):(
-                  <button className="btn" onClick={()=>{setAdjusting(item.Barcode);setAdjVal(item.Stock);}} style={{padding:"5px 13px",background:T.accentLight,border:`1px solid ${T.accentBorder}`,color:T.accent,fontSize:11,borderRadius:6,fontWeight:600}}>Set</button>
+
+              {/* Adjust */}
+              <div style={{display:"flex",justifyContent:"center"}}>
+                {isAdj ? (
+                  <div style={{display:"flex",flexDirection:"column",gap:5,alignItems:"center"}}>
+                    {vu ? (
+                      <div style={{display:"flex",gap:4,alignItems:"flex-end",flexWrap:"wrap",justifyContent:"center"}}>
+                        {numIn(adjCottons, v=>onUnitChange("c",v,item), "#7c3aed",   "Cotton")}
+                        {numIn(adjBoxes,   v=>onUnitChange("b",v,item), T.accent,    "Box")}
+                        {numIn(adjLoose,   v=>onUnitChange("l",v,item), T.posOrange, "Pcs")}
+                        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                          <span style={{fontSize:9,color:"#d97706",fontWeight:700}}>TOTAL</span>
+                          <input type="number" min="0" value={adjPieces}
+                            onChange={e=>onPiecesChange(e.target.value,item)}
+                            onFocus={e=>e.target.select()}
+                            style={{width:50,padding:"4px",background:"#fffbeb",border:"1.5px solid #d97706",
+                              borderRadius:6,color:T.textPrimary,fontSize:13,fontWeight:700,textAlign:"center",outline:"none"}}/>
+                        </div>
+                      </div>
+                    ) : (
+                      <input type="number" value={adjPieces} onChange={e=>setAdjPieces(e.target.value)}
+                        style={{...inSt,width:72,padding:"5px 7px",textAlign:"center",background:T.bgCard}}
+                        autoFocus onKeyDown={e=>e.key==="Enter"&&doAdjust(item.Barcode)}/>
+                    )}
+                    <div style={{display:"flex",gap:4}}>
+                      <button className="btn" onClick={()=>doAdjust(item.Barcode)}
+                        style={{padding:"4px 10px",background:"linear-gradient(135deg,#047857,#059669)",color:"#fff",fontSize:11,borderRadius:5,border:"none",fontWeight:600}}>✓ Set</button>
+                      <button className="btn" onClick={()=>setAdjusting(null)}
+                        style={{padding:"4px 8px",background:T.bgCardAlt,border:`1px solid ${T.border}`,color:T.textSecondary,fontSize:11,borderRadius:5}}>✕</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button className="btn" onClick={()=>startAdjust(item)}
+                    style={{padding:"5px 13px",background:T.accentLight,border:`1px solid ${T.accentBorder}`,color:T.accent,fontSize:11,borderRadius:6,fontWeight:600}}>Set</button>
                 )}
               </div>
             </div>
@@ -137,7 +269,6 @@ export function StockTab({ items, setItems, safeCallScript }) {
   );
 }
 
-// ── SETUP TAB ─────────────────────────────────────────────────────────────────
 export function SetupTab({ sheetStatus, onRefresh, lastSync, safeCallScript }) {
   const [testResults,   setTestResults]   = useState(null);
   const [testing,       setTesting]       = useState(false);
