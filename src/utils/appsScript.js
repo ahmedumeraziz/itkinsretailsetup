@@ -348,6 +348,7 @@ function editSale(ss, data) {
     "PaymentMethod": data.PaymentMethod || "Cash",
     "CustomerName":  data.CustomerName  || "",
     "CustomerCell":  data.CustomerCell  || "",
+    "ItemsDetail":   data.ItemsDetail   || "[]",
   };
   Object.keys(fields).forEach(function(col) {
     if (hdrMap[col] !== undefined) sh.getRange(rowNum, hdrMap[col] + 1).setValue(fields[col]);
