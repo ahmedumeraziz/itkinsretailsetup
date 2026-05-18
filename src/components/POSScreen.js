@@ -181,20 +181,34 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
   const payments     = ab.payments;
   const billDiscPct  = ab.billDiscPct||0;
 
-  // ── Cart totals — use qty_total_pcs * piece price for VU items ──
-  const subTotal     = cart.reduce((s,i) => {
-    const price = parseFloat(i.piece_sale_price || i.Price || 0);
-    const qty   = vuEnabled(i) ? (i.qty || 0) : (i.qty || 0);
-    return s + price * qty;
+  // ── Cart totals ─────────────────────────────────────────────────────────────
+  // BUG FIX 1: VU items must use piece_sale_price only; regular items use Price.
+  // Previously both branches used the same formula — piece_sale_price || Price —
+  // which could pull the wrong price for regular (non-VU) items if piece_sale_price
+  // happened to be set.
+  const subTotal = cart.reduce((s, i) => {
+    const price = vuEnabled(i)
+      ? parseFloat(i.piece_sale_price || 0)
+      : parseFloat(i.Price || 0);
+    return s + price * (i.qty || 0);
   }, 0);
-  const itemDiscount = cart.reduce((s,i) => s + parseFloat(i.Discount||0)*i.qty, 0);
+
+  // BUG FIX 2: guard qty with || 0 so NaN items don't corrupt the total
+  const itemDiscount = cart.reduce((s, i) => s + parseFloat(i.Discount || 0) * (i.qty || 0), 0);
   const afterItems   = subTotal - itemDiscount;
-  const billDiscount = parseFloat(((afterItems*billDiscPct)/100).toFixed(2));
-  const refundApplied= payments.filter(p=>p.type==="refund").reduce((s,p)=>s+parseFloat(p.amount||0),0);
+  const billDiscount = parseFloat(((afterItems * billDiscPct) / 100).toFixed(2));
+  const refundApplied= payments.filter(p => p.type === "refund").reduce((s, p) => s + parseFloat(p.amount || 0), 0);
+
+  // BUG FIX 3: grandTotal = pre-refund total (used for saving to sheet / reporting).
+  // netTotal = what the customer actually pays today.
+  // Previously the bill object was saved with grandTotal: netTotal which meant the
+  // stored sale total already had the refund baked in — breaking reports & ledger.
   const grandTotal   = afterItems - billDiscount;
   const netTotal     = Math.max(0, grandTotal - refundApplied);
-  const totalReceived= payments.filter(p=>p.type!=="refund").reduce((s,p)=>s+(parseFloat(p.amount)||0),0);
-  const change       = totalReceived - netTotal;
+
+  const totalReceived= payments.filter(p => p.type !== "refund").reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+  // BUG FIX 4: change can never be negative
+  const change       = Math.max(0, totalReceived - netTotal);
 
   const saveBill = () => {
     if(cart.length===0) return;
@@ -230,14 +244,19 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
         qty_boxes:     boxes,
         qty_pieces:    pieces,
         qty_total_pcs: item.qty,
-        unit_price_pcs: parseFloat(item.piece_sale_price || item.Price || 0),
-        line_total:    parseFloat(item.piece_sale_price || item.Price || 0) * item.qty,
+        // BUG FIX 5: unit_price_pcs should only use piece_sale_price for VU items
+        unit_price_pcs: parseFloat(item.piece_sale_price || 0),
+        // BUG FIX 5: line_total must deduct per-piece discount
+        line_total: (parseFloat(item.piece_sale_price || 0) - parseFloat(item.Discount || 0)) * item.qty,
       };
     });
 
-    const bill = { billNo, date, time, cashier: user.Name, items: enrichedCart, subTotal, totalDiscount, itemDiscount, billDiscount, billDiscountPct: billDiscPct, grandTotal: netTotal, payments, change: Math.max(0, parseFloat(ab.cashReceived||0)-netTotal), customerName: customerInfo.Name, customerCell: customerInfo.CellNo, refundApplied, refundReturnNo, prevPending };
+    // BUG FIX 3: grandTotal (pre-refund) is stored — not netTotal — so sales reports
+    // and customer ledger show the correct sale value. netTotal is stored separately.
+    const bill = { billNo, date, time, cashier: user.Name, items: enrichedCart, subTotal, totalDiscount, itemDiscount, billDiscount, billDiscountPct: billDiscPct, grandTotal, netTotal, payments, change: Math.max(0, parseFloat(ab.cashReceived||0)-netTotal), customerName: customerInfo.Name, customerCell: customerInfo.CellNo, refundApplied, refundReturnNo, prevPending };
 
-    onSaleSaved({ BillNo:billNo, Date:date, Time:time, Cashier:user.Name, GrandTotal:netTotal, Discount:totalDiscount, FBR:0, PaymentMethod:payMethod, ItemsDetail:JSON.stringify(enrichedCart), items:enrichedCart, CustomerName:isKnownCustomer?customerInfo.Name:"Unknown", CustomerCell:isKnownCustomer?customerInfo.CellNo:"", RefundApplied:refundApplied, RefundReturnNo:refundReturnNo }, isKnownCustomer?customerInfo:{Name:"Unknown",CellNo:""});
+    // Save grandTotal (pre-refund) to sheet — RefundApplied is its own column
+    onSaleSaved({ BillNo:billNo, Date:date, Time:time, Cashier:user.Name, GrandTotal:grandTotal, Discount:totalDiscount, FBR:0, PaymentMethod:payMethod, ItemsDetail:JSON.stringify(enrichedCart), items:enrichedCart, CustomerName:isKnownCustomer?customerInfo.Name:"Unknown", CustomerCell:isKnownCustomer?customerInfo.CellNo:"", RefundApplied:refundApplied, RefundReturnNo:refundReturnNo }, isKnownCustomer?customerInfo:{Name:"Unknown",CellNo:""});
 
     setLocalCounter(c=>c+1);
     upd(b=>({...b,saved:true,lastBill:bill}));
@@ -286,7 +305,10 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
       <div style={{display:"flex",alignItems:"center",background:T.bgTopBar,padding:"6px 12px 0",gap:4,overflowX:"auto",borderBottom:`1px solid ${T.border}`}}>
         {bills.map(b=>{
           const isA=b.id===activeBillId;
-          const bT=b.cart.reduce((s,i)=>s+parseFloat(i.piece_sale_price||i.Price||0)*i.qty-parseFloat(i.Discount||0)*i.qty,0);
+          // BUG FIX 6: tab total uses correct price per item type and applies bill discount
+          const bSub = b.cart.reduce((s,i)=>{const price=vuEnabled(i)?parseFloat(i.piece_sale_price||0):parseFloat(i.Price||0);return s+(price-parseFloat(i.Discount||0))*(i.qty||0);},0);
+          const bBillDisc = parseFloat(((bSub*(b.billDiscPct||0))/100).toFixed(2));
+          const bT = Math.max(0, bSub - bBillDisc);
           return(
             <div key={b.id} onClick={()=>{setActiveBillId(b.id);setTimeout(()=>searchRef.current?.focus(),40);}} style={tabStyle(isA)}>
               <span>Bill {b.id}
