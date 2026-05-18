@@ -70,7 +70,7 @@ export default function AdminScreen({
       <div style={{ flex: 1, padding: "20px 18px", overflowY: "auto" }}>
         {tab === "items"      && <ItemsTab      items={items} setItems={setItems} categories={categories} safeCallScript={safeCallScript} />}
         {tab === "stock"      && <StockTab      items={items} setItems={setItems} safeCallScript={safeCallScript} />}
-        {tab === "sales"      && <SalesTab      sales={sales} setSales={setSales} customers={customers} returns={returns} safeCallScript={safeCallScript} />}
+        {tab === "sales"      && <SalesTab      sales={sales} setSales={setSales} customers={customers} returns={returns} safeCallScript={safeCallScript} items={items} />}
         {tab === "profit"     && <ProfitTab     sales={sales} items={items} returns={returns} />}
         {tab === "hr"         && <HRTab         sales={sales} items={items} returns={returns} safeCallScript={safeCallScript} />}
         {tab === "customers"  && <CustomersTab  customers={customers} setCustomers={setCustomers} safeCallScript={safeCallScript} sales={sales} currentUser={user} />}
