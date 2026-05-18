@@ -118,14 +118,30 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
   const closeBill=(id,e)=>{e.stopPropagation();if(bills.length===1){setBills([emptyBill(id)]);return;}const rem=bills.filter(b=>b.id!==id);setBills(rem);if(activeBillId===id)setActiveBillId(rem[rem.length-1].id);};
   const focusSearch=useCallback(()=>{setFocusedQtyBarcode(null);setTimeout(()=>{if(searchRef.current){searchRef.current.focus();searchRef.current.select();}},60);},[]);
 
+  // ── Stock toast ───────────────────────────────────────────────────────────
+  const [toast, setToast] = useState(null);
+  const showToast = (msg, color = T.danger) => {
+    setToast({ msg, color });
+    setTimeout(() => setToast(null), 2200);
+  };
+
   const addItem = useCallback(item => {
-    const isVU = vuEnabled(item);
+    const isVU  = vuEnabled(item);
+    const stock = Number(item.Stock) || 0;
+    if (stock <= 0) {
+      showToast(`❌ ${item.ItemName} — Out of stock!`);
+      setSearch(""); setResults([]); setKbIndex(-1);
+      return;
+    }
     upd(b => {
       const ex = b.cart.find(i => i.Barcode === item.Barcode);
       if (ex) {
+        if (ex.qty >= stock) {
+          showToast(`⚠ Only ${stock} pcs of "${item.ItemName}" available`, T.warning);
+          return b; // block
+        }
         return { ...b, cart: b.cart.map(i => i.Barcode === item.Barcode ? { ...i, qty: i.qty + 1 } : i) };
       }
-      // For VU items start with 1 piece
       return { ...b, cart: [...b.cart, { ...item, qty: 1 }] };
     });
     setSearch(""); setResults([]); setKbIndex(-1); setFocusedQtyBarcode(null);
@@ -144,7 +160,12 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
   const dropdownRef=useRef();
   useEffect(()=>{if(!dropdownRef.current||kbIndex<0)return;const el=dropdownRef.current.querySelectorAll(".search-item-row")[kbIndex];if(el)el.scrollIntoView({block:"nearest"});},[kbIndex]);
 
-  const setQty=(bc,q)=>upd(b=>({...b,cart:q<=0?b.cart.filter(i=>i.Barcode!==bc):b.cart.map(i=>i.Barcode===bc?{...i,qty:q}:i)}));
+  const setQty=(bc,q)=>upd(b=>{
+    const item  = b.cart.find(i=>i.Barcode===bc);
+    const stock = Number(item?.Stock)||0;
+    if (q > stock) { showToast(`⚠ Only ${stock} pcs available — "${item?.ItemName}"`, T.warning); return b; }
+    return {...b,cart:q<=0?b.cart.filter(i=>i.Barcode!==bc):b.cart.map(i=>i.Barcode===bc?{...i,qty:q}:i)};
+  });
   const delItem=bc=>{upd(b=>({...b,cart:b.cart.filter(i=>i.Barcode!==bc)}));if(focusedQtyBarcode===bc){setFocusedQtyBarcode(null);focusSearch();}};
   const voidCart=()=>{upd(b=>({...b,cart:[],payments:[{type:"cash",amount:"",last4:""}],saved:false,billDiscPct:0,customerName:"",customerCell:""}));setFocusedQtyBarcode(null);};
   const setBDP=v=>upd(b=>({...b,billDiscPct:parseFloat(v)||0}));
@@ -233,6 +254,15 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
 
   return (
     <div style={{height:"100vh",display:"flex",flexDirection:"column",background:T.bgPage,overflow:"hidden"}}>
+      {/* Stock toast */}
+      {toast && (
+        <div style={{position:"fixed",top:70,left:"50%",transform:"translateX(-50%)",zIndex:9999,
+          background:toast.color,color:"#fff",padding:"10px 22px",borderRadius:10,
+          fontSize:13,fontWeight:700,boxShadow:"0 4px 20px rgba(0,0,0,0.25)",
+          animation:"fadeIn 0.15s ease",whiteSpace:"nowrap",pointerEvents:"none"}}>
+          {toast.msg}
+        </div>
+      )}
       {/* TOP BAR */}
       <div style={topBarStyle}>
         <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
@@ -282,18 +312,29 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
             {results.length>0&&(
               <div ref={dropdownRef} style={{position:"absolute",top:"100%",left:0,right:0,background:T.bgCard,border:`1px solid ${T.border}`,borderRadius:9,zIndex:200,boxShadow:T.shadowLg,maxHeight:340,overflowY:"auto"}}>
                 <div style={{padding:"4px 13px",background:T.accentLight,borderBottom:`1px solid ${T.accentBorder}`,color:T.accent,fontSize:9,letterSpacing:1}}>↑↓ NAVIGATE · ENTER SELECT → QTY · ESC CLOSE</div>
-                {results.map((item,i)=>{const stk=Number(item.Stock)||0;const isKb=i===kbIndex;const isVU=vuEnabled(item);return(
-                  <div key={i} className={`search-item-row${isKb?" kb-selected":""}`} onClick={()=>addItem(item)}
-                    style={{padding:"9px 13px",cursor:"pointer",borderBottom:`1px solid ${T.borderLight}`,display:"flex",justifyContent:"space-between",alignItems:"center",background:isKb?T.accentLight:"transparent",borderLeft:isKb?`3px solid ${T.accent}`:"3px solid transparent",transition:"background 0.1s"}}>
+                {results.map((item,i)=>{const stk=Number(item.Stock)||0;const isKb=i===kbIndex;const isVU=vuEnabled(item);const isOut=stk<=0;return(
+                  <div key={i} className={`search-item-row${isKb?" kb-selected":""}`}
+                    onClick={()=>{ if(!isOut) addItem(item); }}
+                    style={{padding:"9px 13px",cursor:isOut?"not-allowed":"pointer",borderBottom:`1px solid ${T.borderLight}`,
+                      display:"flex",justifyContent:"space-between",alignItems:"center",
+                      background:isOut?"#fef2f2":isKb?T.accentLight:"transparent",
+                      borderLeft:isKb&&!isOut?`3px solid ${T.accent}`:"3px solid transparent",
+                      opacity:isOut?0.72:1,transition:"background 0.1s"}}>
                     <div>
-                      <div style={{color:T.textPrimary,fontSize:13,fontWeight:600}}>{item.ItemName} {isVU&&<span style={{background:T.accentLight,color:T.accent,border:`1px solid ${T.accentBorder}`,borderRadius:9,fontSize:9,padding:"1px 6px",fontWeight:700,marginLeft:5}}>📦 VU</span>}</div>
-                      <div style={{color:T.textMuted,fontSize:10}}>{item.Barcode} · {item.Category}{isVU?` · ${item.pieces_per_box}pcs/box · ${item.boxes_per_cotton}box/cotton`:""}</div>
+                      <div style={{display:"flex",alignItems:"center",gap:6}}>
+                        <span style={{color:isOut?T.danger:T.textPrimary,fontSize:13,fontWeight:600}}>{item.ItemName}</span>
+                        {isOut&&<span style={{background:T.dangerLight,color:T.danger,border:`1px solid ${T.dangerBorder}`,borderRadius:8,fontSize:9,padding:"1px 6px",fontWeight:800}}>OUT OF STOCK</span>}
+                        {isVU&&!isOut&&<span style={{background:T.accentLight,color:T.accent,border:`1px solid ${T.accentBorder}`,borderRadius:9,fontSize:9,padding:"1px 6px",fontWeight:700,marginLeft:4}}>📦 VU</span>}
+                      </div>
+                      <div style={{color:T.textMuted,fontSize:10}}>{item.Barcode} · {item.Category}{isVU&&!isOut?` · ${item.pieces_per_box}pcs/box · ${item.boxes_per_cotton}box/cotton`:""}</div>
                     </div>
                     <div style={{textAlign:"right"}}>
-                      <div style={{color:T.accent,fontWeight:700,fontSize:13}}>PKR {fmt(item.piece_sale_price||item.Price)}/pc</div>
-                      {isVU&&<div style={{color:"#7c3aed",fontSize:10}}>Box: PKR {fmt(item.box_sale_price)} · Cotton: PKR {fmt(item.cotton_sale_price)}</div>}
-                      {parseFloat(item.Discount)>0&&<div style={{color:T.posGold,fontSize:10}}>Disc: PKR {fmt(item.Discount)}</div>}
-                      <div style={{fontSize:10,color:stk<=0?T.danger:stk<=5?T.warning:T.textMuted}}>Stock: {item.Stock}{stk<=0?" ❌":stk<=5?" ⚠":""}</div>
+                      <div style={{color:isOut?T.danger:T.accent,fontWeight:700,fontSize:13}}>PKR {fmt(item.piece_sale_price||item.Price)}/pc</div>
+                      {isVU&&!isOut&&<div style={{color:"#7c3aed",fontSize:10}}>Box: PKR {fmt(item.box_sale_price)} · Cotton: PKR {fmt(item.cotton_sale_price)}</div>}
+                      {parseFloat(item.Discount)>0&&!isOut&&<div style={{color:T.posGold,fontSize:10}}>Disc: PKR {fmt(item.Discount)}</div>}
+                      <div style={{fontSize:10,fontWeight:700,color:stk<=0?T.danger:stk<=5?T.warning:T.success}}>
+                        {stk<=0?"🚫 No stock":stk<=5?`⚠ Only ${stk} left`:`✓ ${stk} in stock`}
+                      </div>
                     </div>
                   </div>
                 );})}
@@ -331,7 +372,14 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
                         </div>
                         <div style={{color:T.textMuted,fontSize:10}}>
                           {item.Barcode}
-                          {Number(item.Stock)<=5&&<span style={{color:T.warning,marginLeft:6}}>⚠ Low</span>}
+                          {(() => {
+                            const stk = Number(item.Stock)||0;
+                            const remaining = stk - item.qty;
+                            if (stk <= 0) return <span style={{color:T.danger,marginLeft:6,fontWeight:700}}>🚫 Out of stock</span>;
+                            if (remaining <= 0) return <span style={{color:T.danger,marginLeft:6,fontWeight:700}}>⚠ Max qty reached</span>;
+                            if (remaining <= 5) return <span style={{color:T.warning,marginLeft:6}}>⚠ {remaining} remaining</span>;
+                            return <span style={{color:T.textMuted,marginLeft:6}}>{remaining} remaining</span>;
+                          })()}
                           {isVU&&<span style={{color:"#7c3aed",marginLeft:6}}>· {item.qty} pcs total</span>}
                         </div>
                         {/* VU breakdown badge row */}
@@ -362,7 +410,9 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
                               ref={el=>{qtyRefs.current[item.Barcode]=el;}}
                               className={isFQ?"qty-focus-input":""}
                               style={{width:50,padding:"4px 6px",background:T.bgCard,border:`1px solid ${T.border}`,borderRadius:5,color:T.textPrimary,fontSize:14,fontWeight:700,textAlign:"center",outline:"none"}} tabIndex={0}/>
-                            <button className="btn" onClick={()=>setQty(item.Barcode,item.qty+1)} tabIndex={-1} style={{width:22,height:22,background:T.accentLight,border:`1px solid ${T.accentBorder}`,color:T.accent,fontSize:14,borderRadius:5,padding:0}}>+</button>
+                            <button className="btn" onClick={()=>setQty(item.Barcode,item.qty+1)} tabIndex={-1}
+                              disabled={item.qty>=(Number(item.Stock)||0)}
+                              style={{width:22,height:22,background:item.qty>=(Number(item.Stock)||0)?T.bgCardAlt:T.accentLight,border:`1px solid ${item.qty>=(Number(item.Stock)||0)?T.border:T.accentBorder}`,color:item.qty>=(Number(item.Stock)||0)?T.textMuted:T.accent,fontSize:14,borderRadius:5,padding:0,cursor:item.qty>=(Number(item.Stock)||0)?"not-allowed":"pointer"}}>+</button>
                           </>
                         )}
                       </div>
