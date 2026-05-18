@@ -303,6 +303,10 @@ export function CashiersTab({ cashiers, setCashiers, safeCallScript }) {
   const [editing, setEditing] = useState(null);
   const [origUsername, setOrigUsername] = useState("");
   const [form, setForm] = useState({ Name:"", Username:"", PIN:"", Role:"cashier" });
+  // NOTE: Cashiers are defined in config.js (CASHIERS constant). Changes made here
+  // update local UI state only for the current session — they are NOT saved to the
+  // sheet or config file. To permanently add/change a cashier, edit src/config.js
+  // and redeploy (push to GitHub / Vercel).
   const startAdd  = () => { setEditing("__new__"); setOrigUsername(""); setForm({Name:"",Username:"",PIN:"",Role:"cashier"}); };
   const startEdit = c => { setEditing(c.Username); setOrigUsername(c.Username); setForm({...c}); };
   const save = async () => {
@@ -314,6 +318,9 @@ export function CashiersTab({ cashiers, setCashiers, safeCallScript }) {
   const del = username => { if(window.confirm("Delete this user?")){setCashiers(p=>p.filter(c=>c.Username!==username));safeCallScript({action:"deleteCashier",Username:username});} };
   return (
     <div style={{ maxWidth: 580 }}>
+      <div style={{ marginBottom: 14, padding: "10px 15px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 9, color: "#92400e", fontSize: 12, lineHeight: 1.6 }}>
+        ⚠️ <strong>Cashiers are defined in <code>src/config.js</code>.</strong> Changes here are session-only and will be lost on refresh. To make permanent changes, edit <code>CASHIERS</code> in <code>config.js</code> and redeploy.
+      </div>
       <button className="btn" onClick={startAdd} style={{ ...btn("primary"), padding:"9px 18px", fontSize:12, marginBottom:14 }}>+ Add User</button>
       {editing&&(
         <div style={{...card,padding:18,marginBottom:16,borderLeft:`4px solid ${T.accent}`}}>
