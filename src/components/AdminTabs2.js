@@ -498,7 +498,7 @@ function generateDailySalePDF(filtered, filterFrom, filterTo, filterCashier, fil
 
 
 // ── SALES TAB ─────────────────────────────────────────────────────────────────
-export function SalesTab({ sales, setSales, customers, returns, safeCallScript, items }) {
+export function SalesTab({ sales, setSales, customers, returns, safeCallScript, items, setItems }) {
   const [filterFrom,    setFilterFrom]    = useState("");
   const [filterTo,      setFilterTo]      = useState("");
   const [filterCashier, setFilterCashier] = useState("All");
@@ -580,6 +580,52 @@ export function SalesTab({ sales, setSales, customers, returns, safeCallScript, 
     const newID = JSON.stringify(editItems);
     const updated = { ...viewBill, ItemsDetail: newID, GrandTotal: newGT };
     setSales(prev => prev.map(s => normBill(s.BillNo) === normBill(viewBill.BillNo) ? updated : s));
+
+    // ── Stock reconciliation ──────────────────────────────────────────────────
+    // Build a map of old qtys from the original bill
+    const oldItems = safeParseItems(viewBill.ItemsDetail);
+    const oldQtyMap = new Map(oldItems.map(i => [i.Barcode, parseInt(i.qty || i.qty_total_pcs) || 0]));
+    const newQtyMap = new Map(editItems.map(i => [i.Barcode, parseInt(i.qty || i.qty_total_pcs) || 0]));
+
+    // Collect all barcodes that changed
+    const allBarcodes = new Set([...oldQtyMap.keys(), ...newQtyMap.keys()]);
+    const stockChanges = []; // { Barcode, delta } — positive delta = stock increases (qty reduced)
+
+    allBarcodes.forEach(bc => {
+      const oldQty = oldQtyMap.get(bc) || 0;
+      const newQty = newQtyMap.get(bc) || 0;
+      const delta  = oldQty - newQty; // positive = sold less → stock goes up
+      if (delta !== 0) stockChanges.push({ Barcode: bc, delta });
+    });
+
+    if (stockChanges.length > 0 && setItems) {
+      setItems(prev => prev.map(item => {
+        const change = stockChanges.find(c => c.Barcode === item.Barcode);
+        if (!change) return item;
+        const newStock = Math.max(0, (Number(item.Stock) || 0) + change.delta);
+        // Persist to IndexedDB
+        import("../utils/db").then(({ dbPut }) => {
+          dbPut("items", { ...item, Stock: String(newStock), id: item.Barcode }).catch(() => {});
+        });
+        // Log the stock adjustment to Google Sheet
+        if (safeCallScript) {
+          const editedItem = editItems.find(i => i.Barcode === item.Barcode) || oldItems.find(i => i.Barcode === item.Barcode);
+          safeCallScript({
+            action:    "adjustStock",
+            Barcode:   item.Barcode,
+            AdjustType:"set",
+            Value:     newStock,
+            Reason:    `Bill edit ${viewBill.BillNo}`,
+            Before:    Number(item.Stock) || 0,
+            After:     newStock,
+            ItemName:  item.ItemName || item.Barcode,
+          });
+        }
+        return { ...item, Stock: String(newStock) };
+      }));
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     if (safeCallScript) await safeCallScript({ action: "editSale", ...updated });
     setViewBill(updated); setEditItems(null); setSaving(false);
   };
