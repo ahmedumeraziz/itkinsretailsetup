@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { T } from "../config";
 import StatusBar from "./StatusBar";
-import { ItemsTab, CategoriesTab, CashiersTab } from "./AdminTabs1";
+import { ItemsTab, CategoriesTab } from "./AdminTabs1";
 import { SalesTab, ReturnsTab, ProfitTab } from "./AdminTabs2";
 import { StockTab, SetupTab } from "./AdminTabs3";
 import { CustomersTab } from "./CustomersTab";
@@ -16,7 +16,6 @@ const TABS = [
   { id: "customers",  label: "👥 Customers",  admin: false },
   { id: "returns",    label: "↩ Returns",     admin: false },
   { id: "categories", label: "🏷 Categories", admin: true  },
-  { id: "cashiers",   label: "🔐 Cashiers",   admin: true  },
   { id: "setup",      label: "⚙️ Setup",      admin: true  },
 ];
 
@@ -77,7 +76,6 @@ export default function AdminScreen({
         {tab === "customers"  && <CustomersTab  customers={customers} setCustomers={setCustomers} safeCallScript={safeCallScript} sales={sales} currentUser={user} />}
         {tab === "returns"    && <ReturnsTab    returns={returns} />}
         {tab === "categories" && <CategoriesTab categories={categories} setCategories={setCategories} items={items} safeCallScript={safeCallScript} />}
-        {tab === "cashiers"   && <CashiersTab   cashiers={cashiers} setCashiers={setCashiers} safeCallScript={safeCallScript} />}
         {tab === "setup"      && <SetupTab      sheetStatus={sheetStatus} onRefresh={onRefresh} lastSync={lastSync} safeCallScript={safeCallScript} />}
       </div>
     </div>
