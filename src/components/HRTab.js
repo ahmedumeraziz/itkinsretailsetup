@@ -114,19 +114,44 @@ export function HRTab({ sales, items, returns, safeCallScript }) {
 
   useEffect(() => { loadHR(); }, [loadHR]);
 
-  // ── Net Profit (read from sales/items/returns — same as ProfitTab) ─────────
+  // ── Net Profit — filtered by the same date range as the ledger ──────────────
   const itemMap = new Map(items.map(i => [i.Barcode, i]));
   let rev = 0, cost = 0, refund = 0;
   sales.forEach(s => {
+    // Apply date filter: sale Date is DD/MM/YYYY — convert to YYYY-MM-DD for comparison
+    const saleDate = (() => {
+      const d = s.Date || "";
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+      const parts = d.split("/");
+      if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2,"0")}-${parts[0].padStart(2,"0")}`;
+      return d;
+    })();
+    if (filterFrom && saleDate < filterFrom) return;
+    if (filterTo   && saleDate > filterTo)   return;
     safeParseItems(s.ItemsDetail).forEach(it => {
-      const m = itemMap.get(it.Barcode);
-      const sell = parseFloat(it.Price || 0), c = parseFloat(m?.CostPrice || it.CostPrice || 0);
-      const disc = parseFloat(it.Discount || 0), qty = parseInt(it.qty) || 1;
+      const m    = itemMap.get(it.Barcode);
+      // BUG FIX: use piece_sale_price for VU items (matches POSScreen & ProfitTab)
+      const sell = parseFloat(it.piece_sale_price || it.Price || 0);
+      const c    = parseFloat(m?.CostPrice || it.CostPrice || 0);
+      const disc = parseFloat(it.Discount || 0);
+      const qty  = parseInt(it.qty || it.qty_total_pcs) || 1;
       rev  += (sell - disc) * qty;
       cost += c * qty;
     });
   });
-  returns.forEach(r => { refund += parseFloat(r.RefundAmount || 0); });
+  returns.forEach(r => {
+    // Apply date filter to returns too
+    const rDate = (() => {
+      const d = r.Date || "";
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+      const parts = d.split("/");
+      if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2,"0")}-${parts[0].padStart(2,"0")}`;
+      return d;
+    })();
+    if (filterFrom && rDate < filterFrom) return;
+    if (filterTo   && rDate > filterTo)   return;
+    refund += parseFloat(r.RefundAmount || 0);
+  });
   const netProfit = rev - refund - cost;
 
   // ── Filtered rows ──────────────────────────────────────────────────────────
