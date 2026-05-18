@@ -87,9 +87,11 @@ export default function ReturnModal({ user, sales, items, returnCounter, onRetur
     ...p, [bc]: Math.max(0, Math.min(parseInt(v)||0, saleItems.find(i=>i.Barcode===bc)?.qty||0))
   }));
 
+  // BUG FIX: use piece_sale_price for VU items so refund matches what was charged
   const refundAmt = saleItems.reduce((s,i) => {
-    const qty = returnQtys[i.Barcode]||0;
-    return s + qty * (parseFloat(i.Price||0) - parseFloat(i.Discount||0));
+    const qty   = returnQtys[i.Barcode]||0;
+    const price = parseFloat(i.piece_sale_price || i.Price || 0);
+    return s + qty * (price - parseFloat(i.Discount||0));
   }, 0);
 
   const returnedItems = saleItems.filter(i=>(returnQtys[i.Barcode]||0)>0).map(i=>({...i,qty:returnQtys[i.Barcode]}));
