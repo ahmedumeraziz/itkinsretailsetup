@@ -217,7 +217,9 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
     const totalDiscount = itemDiscount + billDiscount;
     const customerInfo  = { Name: ab.customerName?.trim()||"Unknown", CellNo: ab.customerCell?.trim()||"" };
     const isKnownCustomer = customerInfo.Name && customerInfo.Name!=="Unknown" && customerInfo.Name.trim()!=="" && customerInfo.CellNo && customerInfo.CellNo.trim()!=="";
-    const payMethod   = isKnownCustomer ? "Credit" : "Cash";
+    // BUG FIX: if cashReceived >= netTotal the customer is paying cash now, not on credit
+    const cashPaid = parseFloat(ab.cashReceived||0);
+    const payMethod = !isKnownCustomer ? "Cash" : cashPaid >= netTotal ? "Cash" : "Credit";
 
     const normB = b => { const n=String(b||"").replace(/[^0-9]/g,""); return n.replace(/^0+/,"")||"0"; };
     const existingCustomer = isKnownCustomer ? customers.find(c=>c.CellNo===customerInfo.CellNo) : null;
@@ -480,7 +482,7 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
             <RefundApplyPanel returns={returns} onApply={applyRefund} appliedPayments={payments}/>
           </div>
 
-          {(!ab.customerName||ab.customerName.trim()===""||ab.customerName==="Unknown")&&cart.length>0&&(
+          {cart.length>0&&(
             <div>
               <label style={{display:"block",color:T.accent,fontSize:10,letterSpacing:1.5,marginBottom:5,fontWeight:700}}>CASH RECEIVED</label>
               <input type="number" value={ab.cashReceived||""} onChange={e=>upd(b=>({...b,cashReceived:e.target.value}))}
@@ -498,7 +500,7 @@ export default function POSScreen({ user, items, categories, billCounter, onLogo
           <div style={{display:"flex",gap:7}}>
             <button className="btn" onClick={voidCart} tabIndex={-1} style={{flex:1,padding:12,background:T.dangerLight,border:`1px solid ${T.dangerBorder}`,color:T.danger,fontSize:12,borderRadius:8,fontWeight:600}}>🗑 VOID</button>
             <button className="btn" onClick={saveBill}
-              disabled={cart.length===0||((!ab.customerName||ab.customerName.trim()===""||ab.customerName==="Unknown")&&parseFloat(ab.cashReceived||0)<netTotal)}
+              disabled={cart.length===0||((!ab.customerName||ab.customerName.trim()===""||ab.customerName==="Unknown")&&parseFloat(ab.cashReceived||0)<netTotal)||(ab.customerName&&ab.customerName.trim()!==""&&ab.customerName!=="Unknown"&&parseFloat(ab.cashReceived||0)>0&&parseFloat(ab.cashReceived||0)<netTotal)}
               tabIndex={7}
               style={{flex:2,padding:12,background:cart.length>0?"linear-gradient(135deg,#047857,#059669)":"#e2e8f0",border:"none",color:cart.length>0?"#fff":T.textMuted,fontSize:12,fontWeight:700,borderRadius:8,boxShadow:cart.length>0?"0 3px 10px rgba(5,150,105,0.3)":"none",letterSpacing:0.5}}>
               {ab.saved?"✓ SAVED!":"🖨 SAVE & PRINT"}
