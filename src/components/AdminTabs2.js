@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { T, inSt, slSt, lbSt } from "../config";
-import { fmt, filterDateMatch, safeParseItems } from "../utils/helpers";
+import { fmt, filterDateMatch, dateInRange, safeParseItems } from "../utils/helpers";
 import { printReceipt, printReturnReceipt } from "../utils/print";
 
 const card    = { background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 11, overflow: "hidden", boxShadow: T.shadow };
@@ -79,9 +79,7 @@ export function SalesTab({ sales, setSales, customers, returns, safeCallScript }
 
   const cashierList = [...new Set(sales.map(s => s.Cashier).filter(Boolean))];
   const filtered = sales.filter(s => {
-    const d = s.Date || "";
-    if (filterFrom && d < filterFrom) return false;
-    if (filterTo   && d > filterTo)   return false;
+    if (!dateInRange(s.Date, filterFrom, filterTo)) return false;
     if (filterCashier !== "All" && s.Cashier !== filterCashier) return false;
     return true;
   });
@@ -449,13 +447,14 @@ export function ReturnsTab({ returns }) {
 
 // ── PROFIT TAB ────────────────────────────────────────────────────────────────
 export function ProfitTab({ sales, items, returns }) {
-  const [filterDate,    setFilterDate]    = useState("");
+  const [filterFrom,    setFilterFrom]    = useState("");
+  const [filterTo,      setFilterTo]      = useState("");
   const [filterCashier, setFilterCashier] = useState("All");
   const [filterCat,     setFilterCat]     = useState("All");
   const cashierList = [...new Set(sales.map(s=>s.Cashier).filter(Boolean))];
   const categories  = [...new Set(items.map(i=>i.Category).filter(Boolean))].sort();
   const itemMap     = new Map(items.map(i=>[i.Barcode,i]));
-  const filtered    = sales.filter(s=>filterDateMatch(s.Date,filterDate)&&(filterCashier==="All"||s.Cashier===filterCashier));
+  const filtered    = sales.filter(s=>dateInRange(s.Date,filterFrom,filterTo)&&(filterCashier==="All"||s.Cashier===filterCashier));
   let totalRevenue=0,totalCost=0,totalDiscount=0,totalRefund=0;
   const categoryProfit={},topItems={};
   filtered.forEach(sale=>{
@@ -474,16 +473,17 @@ export function ProfitTab({ sales, items, returns }) {
     });
     totalDiscount+=parseFloat(sale.Discount||0);
   });
-  returns.filter(r=>filterDateMatch(r.Date,filterDate)).forEach(r=>{totalRefund+=parseFloat(r.RefundAmount||0);});
+  returns.filter(r=>dateInRange(r.Date,filterFrom,filterTo)).forEach(r=>{totalRefund+=parseFloat(r.RefundAmount||0);});
   const netRevenue=totalRevenue-totalRefund,netProfit=netRevenue-totalCost,margin=netRevenue>0?(netProfit/netRevenue*100).toFixed(1):0;
   const topList=Object.entries(topItems).sort((a,b)=>b[1].profit-a[1].profit).slice(0,10);
   return (
     <div>
       <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap",alignItems:"flex-end"}}>
-        <div><label style={{...lbSt,marginBottom:4}}>Date</label><input type="date" value={filterDate} onChange={e=>setFilterDate(e.target.value)} style={{...inSt,maxWidth:180,background:T.bgCard}}/></div>
+        <div><label style={{...lbSt,marginBottom:4}}>From Date</label><input type="date" value={filterFrom} onChange={e=>setFilterFrom(e.target.value)} style={{...inSt,maxWidth:175,background:T.bgCard}}/></div>
+        <div><label style={{...lbSt,marginBottom:4}}>To Date</label><input type="date" value={filterTo} onChange={e=>setFilterTo(e.target.value)} style={{...inSt,maxWidth:175,background:T.bgCard}}/></div>
         <div><label style={{...lbSt,marginBottom:4}}>Cashier</label><select value={filterCashier} onChange={e=>setFilterCashier(e.target.value)} style={{...slSt,background:T.bgCard}}><option value="All">All</option>{cashierList.map(c=><option key={c}>{c}</option>)}</select></div>
         <div><label style={{...lbSt,marginBottom:4}}>Category</label><select value={filterCat} onChange={e=>setFilterCat(e.target.value)} style={{...slSt,background:T.bgCard}}><option value="All">All</option>{categories.map(c=><option key={c}>{c}</option>)}</select></div>
-        <button className="btn" onClick={()=>{setFilterDate("");setFilterCashier("All");setFilterCat("All");}} style={{padding:"9px 14px",background:T.bgCardAlt,border:`1px solid ${T.border}`,color:T.textSecondary,borderRadius:7,fontSize:12}}>Clear</button>
+        <button className="btn" onClick={()=>{setFilterFrom("");setFilterTo("");setFilterCashier("All");setFilterCat("All");}} style={{padding:"9px 14px",background:T.bgCardAlt,border:`1px solid ${T.border}`,color:T.textSecondary,borderRadius:7,fontSize:12}}>Clear</button>
       </div>
       {totalCost===0&&<div style={{background:T.warningLight,border:`1px solid ${T.warningBorder}`,borderRadius:10,padding:"13px 18px",marginBottom:16,color:T.warning,fontSize:12}}>⚠ Set Cost Price on items for accurate profit.</div>}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(155px,1fr))",gap:11,marginBottom:18}}>
