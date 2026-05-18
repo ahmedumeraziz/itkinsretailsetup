@@ -44,7 +44,7 @@ function printPaymentReceipt({customer,amountReceived,date,note,pid,pendingBefor
   .bi{display:flex;justify-content:space-between;font-size:10px;margin:1px 0}.row{display:flex;justify-content:space-between;margin:5px 0;font-size:12px}
   .big{font-size:14px;font-weight:bold}.ft{text-align:center;font-size:10px;margin-top:8px}@media print{body{margin:0}}</style>
   </head><body>
-  <div class="sn">MART - BAKERY AND STORES</div><div class="dv"></div>
+  <div class="sn">MIAN TRADERS</div><div class="dv"></div>
   <div class="bi"><span>PAYMENT RECEIPT</span><span>${date}</span></div>
   <div class="bi"><span>Receipt ID:</span><span><b>${pid}</b></span></div>
   <div class="dv"></div>
@@ -60,7 +60,7 @@ function printPaymentReceipt({customer,amountReceived,date,note,pid,pendingBefor
     <span style="color:${remainingAfter>0?"#c00":"#006600"}">${remainingAfter>0?"PKR "+fmt(remainingAfter):"CLEAR ✓"}</span>
   </div>
   <div class="dv"></div>
-  <div class="ft">Thank you!<br><b>Mart, Bakery &amp; Store</b></div>
+  <div class="ft">Thank you!<br><b>Mian Traders</b></div>
   <div style="text-align:center;font-size:9px;margin-top:3px;color:#555">itkins.com | 0304-7414437</div>
   <br/><br/></body></html>`;
   const w=window.open("","_blank","width=340,height=600");
