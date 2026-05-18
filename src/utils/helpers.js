@@ -2,10 +2,31 @@
 export const fmt = n => parseFloat(n || 0).toLocaleString("en-PK", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 export const getNow = () => { const d = new Date(); return { date: d.toLocaleDateString("en-GB"), time: d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true }) }; };
 
+// Convert sale date DD/MM/YYYY → YYYY-MM-DD for reliable comparison
+export function parseSaleDate(saleDate) {
+  if (!saleDate) return "";
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(saleDate)) return saleDate;
+  // DD/MM/YYYY
+  const parts = saleDate.split("/");
+  if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2,"0")}-${parts[0].padStart(2,"0")}`;
+  return saleDate;
+}
+
+// Single-date equality (used by Returns tab)
 export function filterDateMatch(saleDate, filterVal) {
   if (!filterVal) return true;
-  const [y, m, d] = filterVal.split("-");
-  return saleDate === `${d}/${m}/${y}`;
+  return parseSaleDate(saleDate) === filterVal;
+}
+
+// Date range filter — filterFrom and filterTo are YYYY-MM-DD from <input type="date">
+export function dateInRange(saleDate, filterFrom, filterTo) {
+  if (!filterFrom && !filterTo) return true;
+  const d = parseSaleDate(saleDate);
+  if (!d) return true;
+  if (filterFrom && d < filterFrom) return false;
+  if (filterTo   && d > filterTo)   return false;
+  return true;
 }
 
 export function safeParseItems(str) {
