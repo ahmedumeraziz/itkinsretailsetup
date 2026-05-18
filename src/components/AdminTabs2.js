@@ -907,7 +907,8 @@ export function ProfitTab({ sales, items, returns }) {
     si.forEach(si=>{
       if(filterCat!=="All"&&si.Category!==filterCat)return;
       const master=itemMap.get(si.Barcode);
-      const sell=parseFloat(si.Price||0),cost=parseFloat(master?.CostPrice||si.CostPrice||0),disc=parseFloat(si.Discount||0),qty=parseInt(si.qty)||1;
+      // BUG FIX: use piece_sale_price for VU items so profit reflects the real sale price
+      const sell=parseFloat(si.piece_sale_price||si.Price||0),cost=parseFloat(master?.CostPrice||si.CostPrice||0),disc=parseFloat(si.Discount||0),qty=parseInt(si.qty||si.qty_total_pcs)||1;
       const revenue=(sell-disc)*qty,cst=cost*qty,profit=revenue-cst;
       totalRevenue+=revenue;totalCost+=cst;
       const cat=si.Category||"Unknown";
