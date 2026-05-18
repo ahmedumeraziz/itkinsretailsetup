@@ -581,6 +581,11 @@ export function SalesTab({ sales, setSales, customers, returns, safeCallScript, 
     const updated = { ...viewBill, ItemsDetail: newID, GrandTotal: newGT };
     setSales(prev => prev.map(s => normBill(s.BillNo) === normBill(viewBill.BillNo) ? updated : s));
 
+    // Persist updated sale to IndexedDB so it survives page refresh
+    import("../utils/db").then(({ dbPut }) => {
+      dbPut("sales", { ...updated, id: updated.BillNo }).catch(() => {});
+    });
+
     // ── Stock reconciliation ──────────────────────────────────────────────────
     // Build a map of old qtys from the original bill
     const oldItems = safeParseItems(viewBill.ItemsDetail);
