@@ -23,61 +23,488 @@ function vuEnabled(item) {
     parseInt(item.boxes_per_cotton) > 0);
 }
 
-function generateSalesPDF(filtered, fromDate, toDate, cashierFilter) {
-  const now       = new Date().toLocaleString("en-PK");
-  const dateRange = fromDate && toDate ? `${fromDate} → ${toDate}` : fromDate ? `From ${fromDate}` : toDate ? `To ${toDate}` : "All Dates";
-  const totalRev  = filtered.reduce((s, r) => s + parseFloat(r.GrandTotal||0), 0);
-  const totalDisc = filtered.reduce((s, r) => s + parseFloat(r.Discount||0), 0);
-  const creditCnt = filtered.filter(s => s.PaymentMethod === "Credit").length;
-  const rows = [...filtered].reverse().map((sale, i) => {
-    const isCredit = sale.PaymentMethod === "Credit";
-    const custName = (sale.CustomerName && sale.CustomerName !== "Unknown" && sale.CustomerName.trim() !== "") ? sale.CustomerName : "Walk-in";
-    const rowBg    = i % 2 === 0 ? "#ffffff" : "#f7f9fc";
-    return `<tr style="background:${rowBg}">
-      <td style="font-weight:700;color:#1d4ed8">#${sale.BillNo}</td>
-      <td>${sale.Date}</td><td>${sale.Time}</td><td>${sale.Cashier}</td>
-      <td style="color:${isCredit?"#ea580c":"#475569"};font-weight:${isCredit?700:400}">${custName}</td>
-      <td>${sale.CustomerCell||"—"}</td>
-      <td style="text-align:right;font-weight:700;color:#059669">PKR ${fmt(sale.GrandTotal)}</td>
-      <td style="text-align:center"><span style="background:${isCredit?"#fff7ed":"#ecfdf5"};color:${isCredit?"#ea580c":"#059669"};border:1px solid ${isCredit?"#fed7aa":"#a7f3d0"};border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700">${sale.PaymentMethod}</span></td>
-    </tr>`;
-  }).join("");
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sales Report</title>
-  <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:12px;padding:24px}
-  h1{font-size:22px;color:#0a2540;margin-bottom:3px}.sub{color:#666;font-size:11px;margin-bottom:18px}
-  .cards{display:flex;gap:14px;margin-bottom:20px}.card{flex:1;border-radius:8px;padding:13px 16px;text-align:center}
-  .card .val{font-size:20px;font-weight:800;margin-bottom:3px}.card .lbl{font-size:10px;color:#666;text-transform:uppercase}
-  table{width:100%;border-collapse:collapse}thead th{background:#0a2540;color:#fff;padding:9px 10px;text-align:left;font-size:10px;letter-spacing:0.8px;text-transform:uppercase}
-  tbody td{padding:7px 10px;border-bottom:1px solid #eaecef;font-size:11px}
-  .footer{margin-top:24px;text-align:center;font-size:10px;color:#aaa;border-top:1px solid #eee;padding-top:10px}
-  @media print{body{padding:10px}}</style></head><body>
-  <h1>💰 Sales Report — MIAN TRADERS</h1>
-  <div class="sub">Generated: ${now} · Date: ${dateRange} · Cashier: ${cashierFilter} · Bills: ${filtered.length}</div>
-  <div class="cards">
-    <div class="card" style="background:#eff6ff;border:1px solid #bfdbfe"><div class="val" style="color:#1d4ed8">PKR ${fmt(totalRev)}</div><div class="lbl">Total Revenue</div></div>
-    <div class="card" style="background:#fffbeb;border:1px solid #fde68a"><div class="val" style="color:#d97706">PKR ${fmt(totalDisc)}</div><div class="lbl">Total Discounts</div></div>
-    <div class="card" style="background:#fff7ed;border:1px solid #fed7aa"><div class="val" style="color:#ea580c">${creditCnt}</div><div class="lbl">Credit Sales</div></div>
-    <div class="card" style="background:#ecfdf5;border:1px solid #a7f3d0"><div class="val" style="color:#059669">${filtered.length}</div><div class="lbl">Total Bills</div></div>
-  </div>
-  <table><thead><tr><th>Bill#</th><th>Date</th><th>Time</th><th>Cashier</th><th>Customer</th><th>Cell</th><th style="text-align:right">Total</th><th style="text-align:center">Payment</th></tr></thead>
-  <tbody>${rows}</tbody></table>
-  <div class="footer">itKINS POS System · itkins.com | 0304-7414437</div>
-  <script>window.onload=()=>window.print();</script></body></html>`;
-  const w = window.open("", "_blank", "width=960,height=720");
-  if (!w) { alert("Allow popups to export PDF!"); return; }
-  w.document.write(html); w.document.close();
+// ── Detect unit type for an item ──────────────────────────────────────────────
+function detectUnitLabel(item) {
+  if (!vuEnabled(item)) return "Pieces";
+  const c = parseInt(item.qty_cottons || 0);
+  const b = parseInt(item.qty_boxes   || 0);
+  const p = parseInt(item.qty_pieces  || 0);
+  if (c > 0 && b === 0 && p === 0) return "Cottons";
+  if (c === 0 && b > 0 && p === 0) return "Boxes";
+  if (c === 0 && b === 0 && p > 0) return "Pieces";
+  return "Mixed"; // multiple units — show breakdown
 }
 
+// ── Build customer load data from filtered credit sales ───────────────────────
+function buildLoadData(filteredSales, filterCat) {
+  const custMap = {}; // CellNo -> { name, cell, items[], total }
+
+  filteredSales.forEach(sale => {
+    const custName = (sale.CustomerName || "").trim();
+    const custCell = (sale.CustomerCell || "").trim();
+    if (!custName || custName === "Unknown" || !custCell) return; // skip walk-in
+
+    const key = custCell || custName;
+    if (!custMap[key]) custMap[key] = { name: custName, cell: custCell, items: [], total: 0 };
+
+    const saleItems = safeParseItems(sale.ItemsDetail);
+    saleItems.forEach(it => {
+      if (filterCat !== "All" && it.Category !== filterCat) return;
+      const price = parseFloat(it.piece_sale_price || it.Price || 0);
+      const disc  = parseFloat(it.Discount || 0);
+      const qty   = parseInt(it.qty || it.qty_total_pcs || 0);
+      const lt    = qty * price - disc * qty;
+      custMap[key].items.push({ ...it, _lineTotal: lt, _billNo: sale.BillNo, _date: sale.Date });
+      custMap[key].total += lt;
+    });
+  });
+
+  return Object.values(custMap).filter(c => c.items.length > 0);
+}
+
+// ── Generate Load Form PDF ────────────────────────────────────────────────────
+function generateLoadFormPDF(filteredSales, filterFrom, filterTo, filterCat, items) {
+  const dateRange = filterFrom && filterTo ? `${filterFrom} to ${filterTo}` :
+                    filterFrom ? `From ${filterFrom}` : filterTo ? `To ${filterTo}` : "All Dates";
+  const now       = new Date().toLocaleString("en-PK");
+
+  // Only credit sales with known customers
+  const creditSales = filteredSales.filter(s =>
+    s.PaymentMethod === "Credit" &&
+    (s.CustomerName || "").trim() &&
+    (s.CustomerName || "").trim() !== "Unknown" &&
+    (s.CustomerCell || "").trim()
+  );
+
+  const customers = buildLoadData(creditSales, filterCat);
+
+  if (customers.length === 0) {
+    alert("No credit customer data found for the selected filters.");
+    return;
+  }
+
+  // ── Grand totals ──────────────────────────────────────────────────────────
+  let grandTotal = 0, grandCottons = 0, grandBoxes = 0, grandPieces = 0;
+  const catBreakdown = {}; // category -> {cottons,boxes,pieces,amount}
+
+  customers.forEach(cust => {
+    grandTotal += cust.total;
+    cust.items.forEach(it => {
+      const c = parseInt(it.qty_cottons || 0);
+      const b = parseInt(it.qty_boxes   || 0);
+      const p = parseInt(it.qty_pieces  || 0);
+      const qty = parseInt(it.qty || it.qty_total_pcs || 0);
+      const isVU = vuEnabled(it);
+      grandCottons += c;
+      grandBoxes   += b;
+      grandPieces  += isVU ? p : qty;
+      const cat = it.Category || "General";
+      if (!catBreakdown[cat]) catBreakdown[cat] = { cottons: 0, boxes: 0, pieces: 0, amount: 0 };
+      catBreakdown[cat].cottons += c;
+      catBreakdown[cat].boxes   += b;
+      catBreakdown[cat].pieces  += isVU ? p : qty;
+      catBreakdown[cat].amount  += it._lineTotal;
+    });
+  });
+
+  // ── Customer sections HTML ────────────────────────────────────────────────
+  const custSections = customers.map((cust, ci) => {
+    // Group items by bill
+    const billMap = {};
+    cust.items.forEach(it => {
+      const bn = it._billNo || "?";
+      if (!billMap[bn]) billMap[bn] = [];
+      billMap[bn].push(it);
+    });
+
+    let custCottons = 0, custBoxes = 0, custPieces = 0;
+    cust.items.forEach(it => {
+      const c = parseInt(it.qty_cottons || 0);
+      const b = parseInt(it.qty_boxes   || 0);
+      const p = parseInt(it.qty_pieces  || 0);
+      const qty = parseInt(it.qty || it.qty_total_pcs || 0);
+      const isVU = vuEnabled(it);
+      custCottons += c;
+      custBoxes   += b;
+      custPieces  += isVU ? p : qty;
+    });
+
+    const rows = cust.items.map((it, ii) => {
+      const isVU = vuEnabled(it);
+      const c  = parseInt(it.qty_cottons || 0);
+      const b  = parseInt(it.qty_boxes   || 0);
+      const p  = parseInt(it.qty_pieces  || 0);
+      const qty= parseInt(it.qty || it.qty_total_pcs || 0);
+      const unitLabel = isVU
+        ? [c>0?`${c}C`:"", b>0?`${b}B`:"", p>0?`${p}P`:""].filter(Boolean).join(" + ")
+        : `${qty} pcs`;
+      const price = parseFloat(it.piece_sale_price || it.Price || 0);
+      const unitType = detectUnitLabel(it);
+      const rowBg = ii % 2 === 0 ? "#fff" : "#f8fafc";
+      return `<tr style="background:${rowBg}">
+        <td>${it.ItemName || it.Barcode}</td>
+        <td style="text-align:center">${it.Category||"—"}</td>
+        <td style="text-align:center;font-weight:700;color:#1d4ed8">${unitLabel}</td>
+        <td style="text-align:center;color:#666">${unitType}</td>
+        <td style="text-align:right">PKR ${fmt(price)}/pc</td>
+        <td style="text-align:right;font-weight:700;color:#059669">PKR ${fmt(it._lineTotal)}</td>
+      </tr>`;
+    }).join("");
+
+    const unitSummary = [
+      custCottons > 0 ? `<span style="background:#f3e8ff;color:#7c3aed;border:1px solid #ddd6fe;border-radius:8px;padding:3px 10px;font-weight:700;font-size:12px">${custCottons} Cotton${custCottons>1?"s":""}</span>` : "",
+      custBoxes   > 0 ? `<span style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:8px;padding:3px 10px;font-weight:700;font-size:12px">${custBoxes} Box${custBoxes>1?"es":""}</span>` : "",
+      custPieces  > 0 ? `<span style="background:#fff7ed;color:#ea580c;border:1px solid #fed7aa;border-radius:8px;padding:3px 10px;font-weight:700;font-size:12px">${custPieces} Pcs</span>` : "",
+    ].filter(Boolean).join("&nbsp;&nbsp;");
+
+    return `
+      <div style="margin-bottom:28px;border:1px solid #d1dce8;border-radius:10px;overflow:hidden;page-break-inside:avoid">
+        <div style="background:#1e3a5f;color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-size:15px;font-weight:800;letter-spacing:0.5px">${ci+1}. ${cust.name}</div>
+            <div style="font-size:11px;opacity:0.8;margin-top:2px">📞 ${cust.cell}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:11px;opacity:0.7">${cust.items.length} item line${cust.items.length>1?"s":""}</div>
+          </div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead>
+            <tr style="background:#f0f4f8">
+              <th style="padding:8px 10px;text-align:left;color:#1e3a5f;font-size:10px;letter-spacing:1px;text-transform:uppercase">Item Name</th>
+              <th style="padding:8px 10px;text-align:center;color:#1e3a5f;font-size:10px;letter-spacing:1px;text-transform:uppercase">Category</th>
+              <th style="padding:8px 10px;text-align:center;color:#1e3a5f;font-size:10px;letter-spacing:1px;text-transform:uppercase">Quantity</th>
+              <th style="padding:8px 10px;text-align:center;color:#1e3a5f;font-size:10px;letter-spacing:1px;text-transform:uppercase">Unit Type</th>
+              <th style="padding:8px 10px;text-align:right;color:#1e3a5f;font-size:10px;letter-spacing:1px;text-transform:uppercase">Unit Price</th>
+              <th style="padding:8px 10px;text-align:right;color:#1e3a5f;font-size:10px;letter-spacing:1px;text-transform:uppercase">Total</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div style="padding:12px 16px;background:#f8fafc;border-top:2px solid #1e3a5f;display:flex;justify-content:space-between;align-items:center">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span style="font-size:11px;color:#666;font-weight:600">Load:</span>
+            ${unitSummary || '<span style="color:#999;font-size:11px">—</span>'}
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:11px;color:#666">Amount to Collect</div>
+            <div style="font-size:18px;font-weight:900;color:#c00;font-family:monospace">PKR ${fmt(cust.total)}</div>
+          </div>
+        </div>
+      </div>`;
+  }).join("");
+
+  // ── Grand Summary Section ─────────────────────────────────────────────────
+  const catRows = Object.entries(catBreakdown).sort((a,b)=>b[1].amount-a[1].amount).map(([cat,d],i)=>`
+    <tr style="background:${i%2===0?"#fff":"#f8fafc"}">
+      <td style="padding:8px 12px;font-weight:600">${cat}</td>
+      <td style="padding:8px 12px;text-align:center;color:#7c3aed;font-weight:700">${d.cottons||0}</td>
+      <td style="padding:8px 12px;text-align:center;color:#1d4ed8;font-weight:700">${d.boxes||0}</td>
+      <td style="padding:8px 12px;text-align:center;color:#ea580c;font-weight:700">${d.pieces||0}</td>
+      <td style="padding:8px 12px;text-align:right;font-weight:700;color:#059669">PKR ${fmt(d.amount)}</td>
+    </tr>`).join("");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Load Form — Mian Traders</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:Arial,sans-serif;font-size:12px;color:#222;background:#fff;padding:20px}
+    @media print{body{padding:10px}@page{margin:1cm}}
+    .page-break{page-break-before:always}
+  </style></head><body>
+
+  <!-- Header -->
+  <div style="text-align:center;margin-bottom:20px;padding:16px;background:#1e3a5f;border-radius:10px;color:#fff">
+    <div style="font-size:22px;font-weight:900;letter-spacing:1px">🚚 LOAD FORM — MIAN TRADERS</div>
+    <div style="font-size:12px;opacity:0.8;margin-top:4px">Generated: ${now} &nbsp;·&nbsp; Period: ${dateRange} &nbsp;·&nbsp; Category: ${filterCat} &nbsp;·&nbsp; Customers: ${customers.length}</div>
+  </div>
+
+  <!-- Customer Sections -->
+  ${custSections}
+
+  <!-- Grand Summary -->
+  <div class="page-break"></div>
+  <div style="border:2px solid #1e3a5f;border-radius:12px;overflow:hidden;margin-top:24px">
+    <div style="background:#1e3a5f;color:#fff;padding:14px 18px;font-size:16px;font-weight:800;letter-spacing:0.5px">
+      📊 GRAND SUMMARY — FULL LOAD
+    </div>
+
+    <!-- 3 summary boxes -->
+    <div style="display:flex;gap:16px;padding:16px;background:#f8fafc">
+      <div style="flex:1;background:#f3e8ff;border:2px solid #ddd6fe;border-radius:10px;padding:14px;text-align:center">
+        <div style="font-size:28px;font-weight:900;color:#7c3aed">${grandCottons}</div>
+        <div style="font-size:11px;color:#7c3aed;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:4px">Total Cottons</div>
+      </div>
+      <div style="flex:1;background:#eff6ff;border:2px solid #bfdbfe;border-radius:10px;padding:14px;text-align:center">
+        <div style="font-size:28px;font-weight:900;color:#1d4ed8">${grandBoxes}</div>
+        <div style="font-size:11px;color:#1d4ed8;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:4px">Total Boxes</div>
+      </div>
+      <div style="flex:1;background:#fff7ed;border:2px solid #fed7aa;border-radius:10px;padding:14px;text-align:center">
+        <div style="font-size:28px;font-weight:900;color:#ea580c">${grandPieces}</div>
+        <div style="font-size:11px;color:#ea580c;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:4px">Total Pieces</div>
+      </div>
+    </div>
+
+    <!-- Category breakdown -->
+    <div style="padding:0 16px 16px">
+      <div style="font-size:12px;font-weight:700;color:#1e3a5f;margin-bottom:8px;letter-spacing:1px;text-transform:uppercase">Category-wise Breakdown</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid #d1dce8;border-radius:8px;overflow:hidden">
+        <thead>
+          <tr style="background:#1e3a5f;color:#fff">
+            <th style="padding:9px 12px;text-align:left;font-size:10px;letter-spacing:1px">CATEGORY</th>
+            <th style="padding:9px 12px;text-align:center;font-size:10px;letter-spacing:1px">COTTONS</th>
+            <th style="padding:9px 12px;text-align:center;font-size:10px;letter-spacing:1px">BOXES</th>
+            <th style="padding:9px 12px;text-align:center;font-size:10px;letter-spacing:1px">PIECES</th>
+            <th style="padding:9px 12px;text-align:right;font-size:10px;letter-spacing:1px">AMOUNT</th>
+          </tr>
+        </thead>
+        <tbody>${catRows}</tbody>
+      </table>
+    </div>
+
+    <!-- Grand total bar -->
+    <div style="background:linear-gradient(135deg,#1e3a5f,#2563eb);color:#fff;padding:18px 20px;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-size:13px;opacity:0.85;margin-bottom:4px">Full Load Summary</div>
+        <div style="font-size:12px;opacity:0.75">${customers.length} Customers &nbsp;·&nbsp; ${grandCottons} Cottons &nbsp;·&nbsp; ${grandBoxes} Boxes &nbsp;·&nbsp; ${grandPieces} Pieces</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:12px;opacity:0.85;margin-bottom:2px">TOTAL TO COLLECT</div>
+        <div style="font-size:26px;font-weight:900;letter-spacing:1px;font-family:monospace">PKR ${fmt(grandTotal)}</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center;font-size:10px;color:#aaa;margin-top:18px;border-top:1px solid #eee;padding-top:10px">
+    itKINS POS System &nbsp;·&nbsp; Mian Traders Gujranwala &nbsp;·&nbsp; itkins.com | 0304-7414437
+  </div>
+  <script>window.onload=()=>window.print();</script>
+  </body></html>`;
+
+  const w = window.open("", "_blank", "width=960,height=800");
+  if (!w) { alert("Allow popups to generate Load Form!"); return; }
+  w.document.write(html);
+  w.document.close();
+}
+
+// ── Generate Daily Sale PDF ───────────────────────────────────────────────────
+function generateDailySalePDF(filtered, filterFrom, filterTo, filterCashier, filterCat) {
+  const now       = new Date().toLocaleString("en-PK");
+  const dateRange = filterFrom && filterTo ? `${filterFrom} to ${filterTo}` :
+                    filterFrom ? `From ${filterFrom}` : filterTo ? `To ${filterTo}` : "All Dates";
+
+  if (filtered.length === 0) { alert("No sales data for the selected filters."); return; }
+
+  const totalRev   = filtered.reduce((s,r) => s + parseFloat(r.GrandTotal||0), 0);
+  const totalDisc  = filtered.reduce((s,r) => s + parseFloat(r.Discount||0), 0);
+  const cashSales  = filtered.filter(s => s.PaymentMethod !== "Credit");
+  const creditSales= filtered.filter(s => s.PaymentMethod === "Credit");
+  const cashRev    = cashSales.reduce((s,r) => s + parseFloat(r.GrandTotal||0), 0);
+  const creditRev  = creditSales.reduce((s,r) => s + parseFloat(r.GrandTotal||0), 0);
+
+  // ── Item-level aggregation with VU breakdown ──────────────────────────────
+  const itemAgg = {}; // barcode -> {name, cat, cottons, boxes, pieces, revenue}
+  const catAgg  = {}; // category -> {cottons, boxes, pieces, revenue, bills}
+
+  filtered.forEach(sale => {
+    const saleItems = safeParseItems(sale.ItemsDetail);
+    saleItems.forEach(it => {
+      if (filterCat !== "All" && it.Category !== filterCat) return;
+      const bc   = it.Barcode || it.ItemName;
+      const cat  = it.Category || "General";
+      const isVU = vuEnabled(it);
+      const c    = parseInt(it.qty_cottons||0);
+      const b    = parseInt(it.qty_boxes  ||0);
+      const p    = parseInt(it.qty_pieces ||0);
+      const qty  = parseInt(it.qty || it.qty_total_pcs || 0);
+      const price= parseFloat(it.piece_sale_price||it.Price||0);
+      const disc = parseFloat(it.Discount||0);
+      const lt   = qty*price - disc*qty;
+
+      if (!itemAgg[bc]) itemAgg[bc] = { name:it.ItemName||bc, cat, cottons:0, boxes:0, pieces:0, totalQty:0, revenue:0, isVU };
+      itemAgg[bc].cottons  += isVU ? c : 0;
+      itemAgg[bc].boxes    += isVU ? b : 0;
+      itemAgg[bc].pieces   += isVU ? p : qty;
+      itemAgg[bc].totalQty += qty;
+      itemAgg[bc].revenue  += lt;
+
+      if (!catAgg[cat]) catAgg[cat] = { cottons:0, boxes:0, pieces:0, revenue:0, qty:0 };
+      catAgg[cat].cottons  += isVU ? c : 0;
+      catAgg[cat].boxes    += isVU ? b : 0;
+      catAgg[cat].pieces   += isVU ? p : qty;
+      catAgg[cat].revenue  += lt;
+      catAgg[cat].qty      += qty;
+    });
+  });
+
+  // Totals
+  let grandCottons=0, grandBoxes=0, grandPieces=0;
+  Object.values(itemAgg).forEach(v=>{ grandCottons+=v.cottons; grandBoxes+=v.boxes; grandPieces+=v.pieces; });
+
+  // ── Bill rows ─────────────────────────────────────────────────────────────
+  const billRows = [...filtered].reverse().map((sale,i) => {
+    const isCredit = sale.PaymentMethod==="Credit";
+    const custName = (sale.CustomerName&&sale.CustomerName!=="Unknown"&&sale.CustomerName.trim()!=="") ? sale.CustomerName : "Walk-in";
+    const rowBg    = i%2===0?"#fff":"#f7f9fc";
+    return `<tr style="background:${rowBg}">
+      <td style="padding:6px 10px;font-weight:700;color:#1d4ed8">#${sale.BillNo}</td>
+      <td style="padding:6px 10px">${sale.Date}</td>
+      <td style="padding:6px 10px">${sale.Time}</td>
+      <td style="padding:6px 10px">${sale.Cashier}</td>
+      <td style="padding:6px 10px;color:${isCredit?"#ea580c":"#475569"};font-weight:${isCredit?700:400}">${custName}</td>
+      <td style="padding:6px 10px;text-align:right;font-weight:700;color:#059669">PKR ${fmt(sale.GrandTotal)}</td>
+      <td style="padding:6px 10px;text-align:center">
+        <span style="background:${isCredit?"#fff7ed":"#ecfdf5"};color:${isCredit?"#ea580c":"#059669"};border:1px solid ${isCredit?"#fed7aa":"#a7f3d0"};border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700">${sale.PaymentMethod}</span>
+      </td>
+    </tr>`;
+  }).join("");
+
+  // ── Item summary rows ─────────────────────────────────────────────────────
+  const itemRows = Object.values(itemAgg).sort((a,b)=>b.revenue-a.revenue).map((it,i) => {
+    const qtyDisplay = it.isVU
+      ? [it.cottons>0?`${it.cottons}C`:"", it.boxes>0?`${it.boxes}B`:"", it.pieces>0?`${it.pieces}P`:""].filter(Boolean).join(" + ") || `${it.totalQty} pcs`
+      : `${it.totalQty} pcs`;
+    const rowBg = i%2===0?"#fff":"#f8fafc";
+    return `<tr style="background:${rowBg}">
+      <td style="padding:7px 12px;font-weight:600">${it.name}</td>
+      <td style="padding:7px 12px;color:#666">${it.cat}</td>
+      <td style="padding:7px 12px;text-align:center;font-weight:700;color:#1d4ed8">${qtyDisplay}</td>
+      <td style="padding:7px 12px;text-align:right;font-weight:700;color:#059669">PKR ${fmt(it.revenue)}</td>
+    </tr>`;
+  }).join("");
+
+  // ── Category breakdown rows ───────────────────────────────────────────────
+  const catRows = Object.entries(catAgg).sort((a,b)=>b[1].revenue-a[1].revenue).map(([cat,d],i) => {
+    const rowBg = i%2===0?"#fff":"#f8fafc";
+    return `<tr style="background:${rowBg}">
+      <td style="padding:7px 12px;font-weight:600">${cat}</td>
+      <td style="padding:7px 12px;text-align:center;color:#7c3aed;font-weight:700">${d.cottons||"—"}</td>
+      <td style="padding:7px 12px;text-align:center;color:#1d4ed8;font-weight:700">${d.boxes||"—"}</td>
+      <td style="padding:7px 12px;text-align:center;color:#ea580c;font-weight:700">${d.pieces||"—"}</td>
+      <td style="padding:7px 12px;text-align:right;font-weight:700;color:#059669">PKR ${fmt(d.revenue)}</td>
+    </tr>`;
+  }).join("");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Daily Sale Report — Mian Traders</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:Arial,sans-serif;font-size:12px;color:#222;background:#fff;padding:20px}
+    table{width:100%;border-collapse:collapse}
+    thead th{background:#1e3a5f;color:#fff;padding:9px 10px;text-align:left;font-size:10px;letter-spacing:0.8px;text-transform:uppercase}
+    tbody td{border-bottom:1px solid #eaecef}
+    .section{margin-bottom:24px}
+    .section-title{font-size:13px;font-weight:800;color:#1e3a5f;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;padding:8px 12px;background:#f0f4f8;border-left:4px solid #1e3a5f;border-radius:0 6px 6px 0}
+    @media print{body{padding:10px}@page{margin:1cm}}
+  </style></head><body>
+
+  <!-- Header -->
+  <div style="text-align:center;margin-bottom:20px;padding:16px;background:#1e3a5f;border-radius:10px;color:#fff">
+    <div style="font-size:22px;font-weight:900;letter-spacing:1px">📊 DAILY SALE REPORT — MIAN TRADERS</div>
+    <div style="font-size:12px;opacity:0.8;margin-top:4px">Generated: ${now} &nbsp;·&nbsp; Period: ${dateRange} &nbsp;·&nbsp; Cashier: ${filterCashier} &nbsp;·&nbsp; Category: ${filterCat}</div>
+  </div>
+
+  <!-- Summary Cards -->
+  <div style="display:flex;gap:12px;margin-bottom:20px">
+    <div style="flex:1;background:#eff6ff;border:2px solid #bfdbfe;border-radius:10px;padding:14px;text-align:center">
+      <div style="font-size:22px;font-weight:900;color:#1d4ed8">PKR ${fmt(totalRev)}</div>
+      <div style="font-size:10px;color:#1d4ed8;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:4px">Total Revenue</div>
+    </div>
+    <div style="flex:1;background:#ecfdf5;border:2px solid #a7f3d0;border-radius:10px;padding:14px;text-align:center">
+      <div style="font-size:22px;font-weight:900;color:#059669">PKR ${fmt(cashRev)}</div>
+      <div style="font-size:10px;color:#059669;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:4px">Cash Sales (${cashSales.length})</div>
+    </div>
+    <div style="flex:1;background:#fff7ed;border:2px solid #fed7aa;border-radius:10px;padding:14px;text-align:center">
+      <div style="font-size:22px;font-weight:900;color:#ea580c">PKR ${fmt(creditRev)}</div>
+      <div style="font-size:10px;color:#ea580c;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:4px">Credit Sales (${creditSales.length})</div>
+    </div>
+    <div style="flex:1;background:#fffbeb;border:2px solid #fde68a;border-radius:10px;padding:14px;text-align:center">
+      <div style="font-size:22px;font-weight:900;color:#d97706">PKR ${fmt(totalDisc)}</div>
+      <div style="font-size:10px;color:#d97706;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:4px">Total Discounts</div>
+    </div>
+    <div style="flex:1;background:#f3e8ff;border:2px solid #ddd6fe;border-radius:10px;padding:14px;text-align:center">
+      <div style="font-size:22px;font-weight:900;color:#7c3aed">${filtered.length}</div>
+      <div style="font-size:10px;color:#7c3aed;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:4px">Total Bills</div>
+    </div>
+  </div>
+
+  <!-- VU Summary row if any -->
+  ${(grandCottons+grandBoxes+grandPieces)>0 ? `
+  <div style="display:flex;gap:12px;margin-bottom:20px">
+    ${grandCottons>0?`<div style="flex:1;background:#f3e8ff;border:2px solid #ddd6fe;border-radius:10px;padding:12px;text-align:center"><div style="font-size:20px;font-weight:900;color:#7c3aed">${grandCottons}</div><div style="font-size:10px;color:#7c3aed;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:3px">Cottons</div></div>`:""}
+    ${grandBoxes>0?`<div style="flex:1;background:#eff6ff;border:2px solid #bfdbfe;border-radius:10px;padding:12px;text-align:center"><div style="font-size:20px;font-weight:900;color:#1d4ed8">${grandBoxes}</div><div style="font-size:10px;color:#1d4ed8;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:3px">Boxes</div></div>`:""}
+    ${grandPieces>0?`<div style="flex:1;background:#fff7ed;border:2px solid #fed7aa;border-radius:10px;padding:12px;text-align:center"><div style="font-size:20px;font-weight:900;color:#ea580c">${grandPieces}</div><div style="font-size:10px;color:#ea580c;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-top:3px">Pieces</div></div>`:""}
+  </div>` : ""}
+
+  <!-- Bills Table -->
+  <div class="section">
+    <div class="section-title">📋 Bill-by-Bill Breakdown (${filtered.length} bills)</div>
+    <table>
+      <thead><tr>
+        <th>Bill#</th><th>Date</th><th>Time</th><th>Cashier</th><th>Customer</th>
+        <th style="text-align:right">Amount</th><th style="text-align:center">Payment</th>
+      </tr></thead>
+      <tbody>${billRows}</tbody>
+    </table>
+  </div>
+
+  <!-- Item Summary -->
+  <div class="section">
+    <div class="section-title">📦 Item-wise Summary</div>
+    <table>
+      <thead><tr>
+        <th>Item Name</th><th>Category</th><th style="text-align:center">Quantity</th><th style="text-align:right">Revenue</th>
+      </tr></thead>
+      <tbody>${itemRows}</tbody>
+    </table>
+  </div>
+
+  <!-- Category Breakdown -->
+  <div class="section">
+    <div class="section-title">🏷 Category-wise Breakdown</div>
+    <table>
+      <thead><tr>
+        <th>Category</th><th style="text-align:center">Cottons</th><th style="text-align:center">Boxes</th><th style="text-align:center">Pieces</th><th style="text-align:right">Amount</th>
+      </tr></thead>
+      <tbody>${catRows}</tbody>
+    </table>
+  </div>
+
+  <!-- Grand Total Bar -->
+  <div style="background:linear-gradient(135deg,#1e3a5f,#2563eb);color:#fff;padding:18px 22px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+    <div>
+      <div style="font-size:13px;opacity:0.85;margin-bottom:4px">Daily Sale Summary</div>
+      <div style="font-size:12px;opacity:0.75">${filtered.length} Bills &nbsp;·&nbsp; ${cashSales.length} Cash &nbsp;·&nbsp; ${creditSales.length} Credit &nbsp;·&nbsp; Disc: PKR ${fmt(totalDisc)}</div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:12px;opacity:0.85;margin-bottom:2px">GRAND TOTAL REVENUE</div>
+      <div style="font-size:28px;font-weight:900;letter-spacing:1px;font-family:monospace">PKR ${fmt(totalRev)}</div>
+    </div>
+  </div>
+
+  <div style="text-align:center;font-size:10px;color:#aaa;margin-top:18px;border-top:1px solid #eee;padding-top:10px">
+    itKINS POS System &nbsp;·&nbsp; Mian Traders Gujranwala &nbsp;·&nbsp; itkins.com | 0304-7414437
+  </div>
+  <script>window.onload=()=>window.print();</script>
+  </body></html>`;
+
+  const w = window.open("", "_blank", "width=960,height=800");
+  if (!w) { alert("Allow popups to generate Daily Sale report!"); return; }
+  w.document.write(html);
+  w.document.close();
+}
+
+
 // ── SALES TAB ─────────────────────────────────────────────────────────────────
-export function SalesTab({ sales, setSales, customers, returns, safeCallScript }) {
+export function SalesTab({ sales, setSales, customers, returns, safeCallScript, items }) {
   const [filterFrom,    setFilterFrom]    = useState("");
   const [filterTo,      setFilterTo]      = useState("");
   const [filterCashier, setFilterCashier] = useState("All");
+  const [filterCat,     setFilterCat]     = useState("All");
   const [viewBill,      setViewBill]      = useState(null);
-  const [editItems,     setEditItems]     = useState(null); // null=view, array=editing
+  const [editItems,     setEditItems]     = useState(null);
   const [saving,        setSaving]        = useState(false);
 
-  const cashierList = [...new Set(sales.map(s => s.Cashier).filter(Boolean))];
+  const cashierList  = [...new Set(sales.map(s => s.Cashier).filter(Boolean))];
+  const categoryList = [...new Set((items||[]).map(i => i.Category).filter(Boolean))].sort();
   const filtered = sales.filter(s => {
     if (!dateInRange(s.Date, filterFrom, filterTo)) return false;
     if (filterCashier !== "All" && s.Cashier !== filterCashier) return false;
@@ -329,20 +756,34 @@ export function SalesTab({ sales, setSales, customers, returns, safeCallScript }
         <SummaryCard icon="🧮" label="Total Bills"    value={filtered.length}          color={T.success}   bg={T.successLight} border={T.successBorder} />
       </div>
 
-      {/* Filters + PDF */}
-      <div style={{display:"flex",gap:12,marginBottom:13,flexWrap:"wrap",alignItems:"flex-end"}}>
-        <div><label style={{...lbSt,marginBottom:4}}>From Date</label><input type="date" value={filterFrom} onChange={e=>setFilterFrom(e.target.value)} style={{...inSt,maxWidth:170,background:T.bgCard}}/></div>
-        <div><label style={{...lbSt,marginBottom:4}}>To Date</label><input type="date" value={filterTo} onChange={e=>setFilterTo(e.target.value)} style={{...inSt,maxWidth:170,background:T.bgCard}}/></div>
+      {/* Filters + Buttons */}
+      <div style={{display:"flex",gap:10,marginBottom:13,flexWrap:"wrap",alignItems:"flex-end"}}>
+        <div><label style={{...lbSt,marginBottom:4}}>From Date</label><input type="date" value={filterFrom} onChange={e=>setFilterFrom(e.target.value)} style={{...inSt,maxWidth:160,background:T.bgCard}}/></div>
+        <div><label style={{...lbSt,marginBottom:4}}>To Date</label><input type="date" value={filterTo} onChange={e=>setFilterTo(e.target.value)} style={{...inSt,maxWidth:160,background:T.bgCard}}/></div>
         <div><label style={{...lbSt,marginBottom:4}}>Cashier</label>
           <select value={filterCashier} onChange={e=>setFilterCashier(e.target.value)} style={{...slSt,background:T.bgCard}}>
             <option value="All">All Cashiers</option>{cashierList.map(c=><option key={c}>{c}</option>)}
           </select>
         </div>
-        <button className="btn" onClick={()=>{setFilterFrom("");setFilterTo("");setFilterCashier("All");}} style={{padding:"9px 14px",background:T.bgCardAlt,border:`1px solid ${T.border}`,color:T.textSecondary,borderRadius:7,fontSize:12}}>Clear</button>
-        <button className="btn" onClick={()=>generateSalesPDF(filtered,filterFrom,filterTo,filterCashier)} disabled={filtered.length===0}
-          style={{marginLeft:"auto",padding:"9px 20px",background:"linear-gradient(135deg,#b45309,#d97706)",color:"#fff",fontSize:12,fontWeight:700,borderRadius:7,border:"none",opacity:filtered.length===0?0.5:1}}>
-          📄 Export PDF ({filtered.length})
-        </button>
+        <div><label style={{...lbSt,marginBottom:4}}>Category</label>
+          <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} style={{...slSt,background:T.bgCard}}>
+            <option value="All">All Categories</option>{categoryList.map(c=><option key={c}>{c}</option>)}
+          </select>
+        </div>
+        <button className="btn" onClick={()=>{setFilterFrom("");setFilterTo("");setFilterCashier("All");setFilterCat("All");}}
+          style={{padding:"9px 14px",background:T.bgCardAlt,border:`1px solid ${T.border}`,color:T.textSecondary,borderRadius:7,fontSize:12}}>Clear</button>
+        <div style={{marginLeft:"auto",display:"flex",gap:8}}>
+          <button className="btn" onClick={()=>generateLoadFormPDF(filtered,filterFrom,filterTo,filterCat,items||[])}
+            disabled={filtered.length===0}
+            style={{padding:"9px 18px",background:"linear-gradient(135deg,#1e3a5f,#2563eb)",color:"#fff",fontSize:12,fontWeight:700,borderRadius:7,border:"none",opacity:filtered.length===0?0.5:1}}>
+            🚚 Load Form
+          </button>
+          <button className="btn" onClick={()=>generateDailySalePDF(filtered,filterFrom,filterTo,filterCashier,filterCat)}
+            disabled={filtered.length===0}
+            style={{padding:"9px 18px",background:"linear-gradient(135deg,#047857,#059669)",color:"#fff",fontSize:12,fontWeight:700,borderRadius:7,border:"none",opacity:filtered.length===0?0.5:1}}>
+            📊 Daily Sale
+          </button>
+        </div>
       </div>
 
       {/* Table */}
