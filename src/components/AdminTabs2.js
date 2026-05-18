@@ -85,25 +85,27 @@ function generateLoadFormPDF(filteredSales, filterFrom, filterTo, filterCat, ite
 
   // ── Grand totals ──────────────────────────────────────────────────────────
   let grandTotal = 0, grandCottons = 0, grandBoxes = 0, grandPieces = 0;
-  const catBreakdown = {}; // category -> {cottons,boxes,pieces,amount}
+  const itemBreakdown = {}; // key -> {name, category, cottons, boxes, pieces, amount}
 
   customers.forEach(cust => {
     grandTotal += cust.total;
     cust.items.forEach(it => {
-      const c = parseInt(it.qty_cottons || 0);
-      const b = parseInt(it.qty_boxes   || 0);
-      const p = parseInt(it.qty_pieces  || 0);
+      const c   = parseInt(it.qty_cottons || 0);
+      const b   = parseInt(it.qty_boxes   || 0);
+      const p   = parseInt(it.qty_pieces  || 0);
       const qty = parseInt(it.qty || it.qty_total_pcs || 0);
       const isVU = vuEnabled(it);
       grandCottons += c;
       grandBoxes   += b;
       grandPieces  += isVU ? p : qty;
-      const cat = it.Category || "General";
-      if (!catBreakdown[cat]) catBreakdown[cat] = { cottons: 0, boxes: 0, pieces: 0, amount: 0 };
-      catBreakdown[cat].cottons += c;
-      catBreakdown[cat].boxes   += b;
-      catBreakdown[cat].pieces  += isVU ? p : qty;
-      catBreakdown[cat].amount  += it._lineTotal;
+      const key  = (it.Barcode || it.ItemName || "?");
+      const name = it.ItemName || it.Barcode || "Unknown";
+      const cat  = it.Category || "General";
+      if (!itemBreakdown[key]) itemBreakdown[key] = { name, category: cat, cottons: 0, boxes: 0, pieces: 0, amount: 0 };
+      itemBreakdown[key].cottons += c;
+      itemBreakdown[key].boxes   += b;
+      itemBreakdown[key].pieces  += isVU ? p : qty;
+      itemBreakdown[key].amount  += it._lineTotal;
     });
   });
 
@@ -195,9 +197,10 @@ function generateLoadFormPDF(filteredSales, filterFrom, filterTo, filterCat, ite
   }).join("");
 
   // ── Grand Summary Section ─────────────────────────────────────────────────
-  const catRows = Object.entries(catBreakdown).sort((a,b)=>b[1].amount-a[1].amount).map(([cat,d],i)=>`
+  const itemRows = Object.values(itemBreakdown).sort((a,b)=>b.amount-a.amount).map((d,i)=>`
     <tr style="background:${i%2===0?"#fff":"#f8fafc"}">
-      <td style="padding:8px 12px;font-weight:600">${cat}</td>
+      <td style="padding:8px 12px;font-weight:700;color:#0f172a">${d.name}</td>
+      <td style="padding:8px 12px;color:#475569">${d.category}</td>
       <td style="padding:8px 12px;text-align:center;color:#7c3aed;font-weight:700">${d.cottons||0}</td>
       <td style="padding:8px 12px;text-align:center;color:#1d4ed8;font-weight:700">${d.boxes||0}</td>
       <td style="padding:8px 12px;text-align:center;color:#ea580c;font-weight:700">${d.pieces||0}</td>
@@ -244,12 +247,13 @@ function generateLoadFormPDF(filteredSales, filterFrom, filterTo, filterCat, ite
       </div>
     </div>
 
-    <!-- Category breakdown -->
+    <!-- Item breakdown -->
     <div style="padding:0 16px 16px">
-      <div style="font-size:12px;font-weight:700;color:#1e3a5f;margin-bottom:8px;letter-spacing:1px;text-transform:uppercase">Category-wise Breakdown</div>
+      <div style="font-size:12px;font-weight:700;color:#1e3a5f;margin-bottom:8px;letter-spacing:1px;text-transform:uppercase">Item-wise Breakdown</div>
       <table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid #d1dce8;border-radius:8px;overflow:hidden">
         <thead>
           <tr style="background:#1e3a5f;color:#fff">
+            <th style="padding:9px 12px;text-align:left;font-size:10px;letter-spacing:1px">ITEM NAME</th>
             <th style="padding:9px 12px;text-align:left;font-size:10px;letter-spacing:1px">CATEGORY</th>
             <th style="padding:9px 12px;text-align:center;font-size:10px;letter-spacing:1px">COTTONS</th>
             <th style="padding:9px 12px;text-align:center;font-size:10px;letter-spacing:1px">BOXES</th>
@@ -257,7 +261,7 @@ function generateLoadFormPDF(filteredSales, filterFrom, filterTo, filterCat, ite
             <th style="padding:9px 12px;text-align:right;font-size:10px;letter-spacing:1px">AMOUNT</th>
           </tr>
         </thead>
-        <tbody>${catRows}</tbody>
+        <tbody>${itemRows}</tbody>
       </table>
     </div>
 
